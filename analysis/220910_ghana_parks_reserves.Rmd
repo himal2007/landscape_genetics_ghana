@@ -1,0 +1,61 @@
+---
+title: "Plot forests and parks in Ghana"
+author: "Himal Shrestha"
+date: "10/09/2022"
+output: 
+  md_document:
+    variant: markdown_github
+    toc: yes
+    toc_depth: 4
+---
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/19226876/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+```
+
+# Aim
+- To plot the parks and forest reserves along with the map of Ghana
+
+## Load libraries
+```{r}
+library(raster)
+library(rgdal)
+library(rgeos)
+library(sp)
+library(ggplot2)
+library(sf)
+library(tmap)
+```
+
+## Get Data
+```{r}
+bbox_buffer <- readRDS("data/bbox_buffer_transition_ghana.rds") %>% st_as_sf() 
+ghana_map_1 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_1.shp", verbose = FALSE) %>% st_as_sf()
+ghana_map_2 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_2.shp", verbose = FALSE) %>% st_as_sf()
+ghana_parks <- readOGR("data/forests_parks/Forest_and_Game_Reserves.shp", verbose = FALSE) %>% st_as_sf()
+bbox_buffer <- bbox_buffer %>% st_transform(crs = crs(ghana_parks))
+```
+
+## Visualise data
+```{r}
+plot(st_geometry(bbox_buffer))
+plot(st_geometry(ghana_parks), add = TRUE)
+```
+
+- extract only Bui national park
+```{r}
+forest_reserves <- ghana_parks %>% dplyr::filter(Type == "Forest_reserves")
+bui_np <- ghana_parks %>% dplyr::filter(ID == "Bui NP")
+
+plot(st_geometry(bbox_buffer))
+# plot(st_geometry(forest_reserves), add = TRUE)
+plot(st_geometry(bui_np), add = TRUE)
+```
+
+```{r}
+tmap_mode("view")
+
+tm_shape(forest_reserves) +
+  tm_polygons()
+```
+
+
