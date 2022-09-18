@@ -28,6 +28,11 @@ library(raster)
 library(ggspatial)
 library(ggrepel)
 ```
+
+```{r}
+extrafont::loadfonts(device="win", quiet = TRUE)
+```
+
 ```{r}
 rm(list = ls())
 ```
@@ -36,7 +41,7 @@ rm(list = ls())
 ```{r}
 # Ghana maps
 ghana_map_1 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_1.shp", verbose = FALSE) %>% st_as_sf()
-ghana_map_2 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_2.shp", verbose = FALSE) %>% st_as_sf()
+ghana_map_2 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_2.shp", verbose = FALSE) # %>% st_as_sf()
 
 bbox_buffer <- readOGR("data/bbox_buffer_shp/bbox_buffer_wgs84.shp") %>% st_as_sf() %>% st_transform(crs = crs(ghana_map_1))
 
@@ -94,18 +99,18 @@ b.dem <- seq(min(ddf$DEM),max(ddf$DEM),length.out=100)
 
 ```{r}
 p <- ggplot() + 
-  geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) + 
-  geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
-  scale_fill_gradientn(name="Altitude (m)",colours = terrain.colors(20))+
-  guides(fill = guide_colorbar()) +
+  # geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) + 
+  # geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
+  # scale_fill_gradientn(name="Altitude (m)",colours = terrain.colors(20))+
+  # guides(fill = guide_colorbar()) +
   scale_alpha(range = c(0, 0.5), guide = "none") +
-  coord_equal() + theme_bw()
+  coord_equal() + theme_void()
 
 ## Boundary
 p1 <- p + 
   geom_sf(data = ghana_map_1, col = "black", lwd = 1.2, lty = 1, alpha = 0.01) +
-  geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
-  geom_sf(data = bui_np_crop, col = "red", lwd = 1, lty = 2, alpha = 0.01)+
+  # geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
+  geom_sf(data = bui_np_crop, col = "red", lwd = 0.5, lty = 1, alpha = 0.01)+
   scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(7.627786, 8.809457),expand=c(0,0))+
   scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(-2.475539, 0.194787),expand=c(0,0))
 
@@ -118,10 +123,27 @@ direction <- p1 +
         pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
         style = north_arrow_fancy_orienteering)
 
-p3 <- direction + geom_point(data = sample_info, aes(X, Y, size = sample_numbers), shape = 21, colour = "black", fill = "white", stroke = 2, alpha = 0.8) +
-  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) 
+p3 <- p1 + geom_point(data = sample_info, aes(X, Y), size = 1, shape = 21, colour = "black", fill = "white", stroke = 2, alpha = 0.8)  +
+  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) +
+  facet_wrap(~samples, ncol = 1)
 
-p3$labels$size <- "Sample size"
-  
+# p3$labels$size <- "Sample size"
+p3  
+```
+
+### Find which locations belong to which region
+```{r}
+sample_info_spdf <- SpatialPointsDataFrame(coords = sample_info[,c("X", "Y")], data = sample_info,
+                               proj4string = crs(ghana_map_2))
+
+sample_info_region <- sample_info_spdf %over% ghana_map_2
+sample_info_region <- sample_info_region %>% dplyr::select(NAME_1, NAME_2)
+
+sample_info$region <- sample_info_region$NAME_1 %>% as.factor()
+```
+
+```{r}
+tmap_mode("view")
+p_tm <- tm_shape(ghana_map_1) + tm_polygons(alpha = .01) + tm_shape(sample_info_spdf) + tm_dots()
 ```
 
