@@ -79,8 +79,15 @@ hill <- hillShade(slope, aspect, 40, 270)
 sample_info <- read.csv("data/ghana_sampling_sites.csv", stringsAsFactors = TRUE)
 ```
 
+### Getting river data
+```{r}
+water_lines <- readOGR("data/GHA_wat/GHA_water_lines_dcw.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(ghana_map_1))
+water_lines_perrennial <- water_lines %>% dplyr::filter(HYC_DESCRI == "Perennial/Permanent")
 
-### Plot the map using ggplot2
+water_bodies <- readOGR("data/GHA_wat/GHA_water_areas_dcw.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(ghana_map_1))
+```
+
+## Plot the map using ggplot2
 + Thanks to [this](https://stackoverflow.com/questions/11179666/ggplot2-raster-plotting-does-not-work-as-expected-when-setting-alpha-values)
 ```{r}
 hs <-  hill
@@ -99,18 +106,20 @@ b.dem <- seq(min(ddf$DEM),max(ddf$DEM),length.out=100)
 
 ```{r}
 p <- ggplot() + 
-  # geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) + 
-  # geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
-  # scale_fill_gradientn(name="Altitude (m)",colours = terrain.colors(20))+
-  # guides(fill = guide_colorbar()) +
+  geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) +
+  geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
+  scale_fill_gradientn(name="Altitude (m)",colours = terrain.colors(20))+
+  guides(fill = guide_colorbar()) +
   scale_alpha(range = c(0, 0.5), guide = "none") +
   coord_equal() + theme_void()
 
 ## Boundary
 p1 <- p + 
-  geom_sf(data = ghana_map_1, col = "black", lwd = 1.2, lty = 1, alpha = 0.01) +
+  geom_sf(data = ghana_map_1, col = "black", lwd = 1, lty = 1, alpha = 0.01) +
   # geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
-  geom_sf(data = bui_np_crop, col = "red", lwd = 0.5, lty = 1, alpha = 0.01)+
+  geom_sf(data = bui_np_crop, col = "black", fill = "lightgreen", lwd = 0.5, lty = 1, alpha = 0.5)+
+  geom_sf(data = water_lines_perrennial, col = "steelblue", lwd = 0.8) +
+  geom_sf(data = water_bodies, fill = "lightblue", col = "black", alpha = .9)+
   scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(7.627786, 8.809457),expand=c(0,0))+
   scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(-2.475539, 0.194787),expand=c(0,0))
 
@@ -118,18 +127,30 @@ p1 <- p +
 scale_bar <- p1 +
   annotation_scale(location = "br", width_hint = 0.5) 
 
-direction <- p1 +
-  annotation_north_arrow(location = "tl", which_north = "true", 
-        pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+direction <- scale_bar +
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.05, "in"), pad_y = unit(0.05, "in"),
         style = north_arrow_fancy_orienteering)
 
-p3 <- p1 + geom_point(data = sample_info, aes(X, Y), size = 1, shape = 21, colour = "black", fill = "white", stroke = 2, alpha = 0.8)  +
-  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) +
-  facet_wrap(~samples, ncol = 1)
+p3 <- direction + geom_point(data = sample_info, aes(X, Y, shape = samples), size = 3, fill = "red", alpha = .6, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = .8) + theme_bw(base_family = "Arial", base_size = 18) + scale_shape_manual(values = c(21,24)) #, shape = 21, colour = "black", fill = "white",  alpha = 0.8) # +
+  # facet_wrap(~samples, ncol = 1)
 
-# p3$labels$size <- "Sample size"
-p3  
+
+p3$labels$shape <- "Samples" #"Sample size"
+
+ggsave(plot = p3, filename = "figs/220919_sample_locations_vec_par.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
+
+```{r}
+sample_info_parasites <- sample_info %>% dplyr::filter(samples == "parasites")
+
+parasite_only <- direction + geom_point(data = sample_info_parasites, aes(X, Y), shape = 21, size = 3, fill = "red", alpha = .6, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info_parasites, aes(X, Y, label = pop_id), size = 5, alpha = .8) + theme_bw(base_family = "Arial", base_size = 18)
+
+ggsave(plot = parasite_only, filename = "figs/220919_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+```
+
 
 ### Find which locations belong to which region
 ```{r}
