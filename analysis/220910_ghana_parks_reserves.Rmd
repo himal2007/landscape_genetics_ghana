@@ -161,6 +161,8 @@ sample_info_region <- sample_info_spdf %over% ghana_map_2
 sample_info_region <- sample_info_region %>% dplyr::select(NAME_1, NAME_2)
 
 sample_info$region <- sample_info_region$NAME_1 %>% as.factor()
+
+sample_info$district <- sample_info_region$NAME_2 %>% as.factor()
 ```
 
 ```{r}

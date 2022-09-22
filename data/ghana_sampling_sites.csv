@@ -1,16 +1,16 @@
-region,samples,sample_numbers,Community,pop_id,X,Y
-,parasites,12,Nyire,NYR,-2.295944,8.112139
-,parasites,6,Bui,BUI,-2.277,8.236
-,parasites,13,Agborlekame/Agbelekame (1) ,AB1,-2.205139,8.233833
-,parasites,15,Agbelekame (2),AB2,-2.1199,8.24556
-,parasites,15,Kyingakrom,KYG,-2.109,8.098779
-,parasites,13,New Longoro,NLG,-2.04509,8.1303
-,parasites,3,Ohiampe,OHP,-1.14,7.95
-,parasites,19,Asubende/Baaya/Senyase,BAS,-0.99037,8.01275194
-,parasites,25,Wiae/Takumdo/Wiae Chabbon,WTC,-0.206666667,8.293333786
-,parasites,13,Kojoboni,KOJ,-0.183138,8.4854722
-,parasites,30,Jagbengbendo,JAG,-0.125583,8.3342
-,vectors,20,Agbelekame,AGB,-2.210722,8.242361
-,vectors,19,Fowman-Banda,FOW,-2.244722,8.119667
-,vectors,26,Asubende,ASU,-0.981444,8.016778
-,vectors,20,Wiae,WIA,-0.144472,8.286056
+region,samples,sample_numbers,Community,pop_id,X,Y,district
+Bono,parasites,12,Nyire,NYR,-2.295944,8.112139,Banda
+Bono,parasites,6,Bui,BUI,-2.277,8.236,Banda
+Savannah,parasites,13,Agborlekame/Agbelekame (1) ,AB1,-2.205139,8.233833,Bole
+Savannah,parasites,15,Agbelekame (2),AB2,-2.1199,8.24556,Bole
+Bono,parasites,15,Kyingakrom,KYG,-2.109,8.098779,Wenchi
+Bono East,parasites,13,New Longoro,NLG,-2.04509,8.1303,Kintampo South
+Bono East,parasites,3,Ohiampe,OHP,-1.14,7.95,Pru West
+Bono East,parasites,19,Asubende/Baaya/Senyase,BAS,-0.99037,8.01275194,Pru East
+Savannah,parasites,25,Wiae/Takumdo/Wiae Chabbon,WTC,-0.206666667,8.293333786,North East Gonja
+Northern,parasites,13,Kojoboni,KOJ,-0.183138,8.4854722,Kpandai
+Northern,parasites,30,Jagbengbendo,JAG,-0.125583,8.3342,Kpandai
+Savannah,vectors,20,Agbelekame,AGB,-2.210722,8.242361,Bole
+Bono,vectors,19,Fowman-Banda,FOW,-2.244722,8.119667,Banda
+Bono East,vectors,26,Asubende,ASU,-0.981444,8.016778,Pru East
+Northern,vectors,20,Wiae,WIA,-0.144472,8.286056,Kpandai
