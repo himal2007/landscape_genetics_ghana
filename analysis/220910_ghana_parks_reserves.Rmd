@@ -117,7 +117,7 @@ p <- ggplot() +
 p1 <- p + 
   geom_sf(data = ghana_map_1, col = "black", lwd = 1, lty = 1, alpha = 0.01) +
   # geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
-  geom_sf(data = bui_np_crop, col = "black", fill = "lightgreen", lwd = 0.5, lty = 1, alpha = 0.5)+
+  geom_sf(data = bui_np_crop, col = "black", fill = "lightcyan3", lwd = 0.5, lty = 1, alpha = .9)+
   geom_sf(data = water_lines_perrennial, col = "steelblue", lwd = 0.8) +
   geom_sf(data = water_bodies, fill = "lightblue", col = "black", alpha = .9)+
   scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(7.627786, 8.809457),expand=c(0,0))+
@@ -132,26 +132,39 @@ direction <- scale_bar +
         pad_x = unit(0.05, "in"), pad_y = unit(0.05, "in"),
         style = north_arrow_fancy_orienteering)
 
-p3 <- direction + geom_point(data = sample_info, aes(X, Y, shape = samples), size = 3, fill = "red", alpha = .6, colour = "black", stroke = 1) +
-  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = .8) + theme_bw(base_family = "Arial", base_size = 18) + scale_shape_manual(values = c(21,24)) #, shape = 21, colour = "black", fill = "white",  alpha = 0.8) # +
+p3 <- direction + geom_point(data = sample_info, aes(X, Y, shape = samples), size = 3, fill = "red", alpha = .8, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) + scale_shape_manual(values = c(21,24)) #, shape = 21, colour = "black", fill = "white",  alpha = 0.8) # +
   # facet_wrap(~samples, ncol = 1)
 
 
 p3$labels$shape <- "Samples" #"Sample size"
 
-ggsave(plot = p3, filename = "figs/220919_sample_locations_vec_par.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+ggsave(plot = p3, filename = "figs/220923_sample_locations_vec_par.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
+#### Vector samples
+```{r}
+sample_info_vectors <- sample_info %>% dplyr::filter(samples == "vectors")
+
+vector_only <- direction + geom_point(data = sample_info_vectors, aes(X, Y, size = sample_numbers), shape = 21, fill = "white", alpha = 1, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info_vectors, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18)
+
+vector_only$labels$size <- "Sample size"
+
+ggsave(plot = vector_only, filename = "figs/220923_sample_locations_vector_only.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+```
+
+#### Parasite samples
 ```{r}
 sample_info_parasites <- sample_info %>% dplyr::filter(samples == "parasites")
 
-parasite_only <- direction + geom_point(data = sample_info_parasites, aes(X, Y), shape = 21, size = 3, fill = "red", alpha = .6, colour = "black", stroke = 1) +
-  geom_label_repel(data = sample_info_parasites, aes(X, Y, label = pop_id), size = 5, alpha = .8) + theme_bw(base_family = "Arial", base_size = 18)
+parasite_only <- direction + geom_point(data = sample_info_parasites, aes(X, Y, size = sample_numbers), shape = 21, fill = "white", alpha = 1, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info_parasites, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18)
 
-ggsave(plot = parasite_only, filename = "figs/220919_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+parasite_only$labels$size <- "Sample size"
+
+ggsave(plot = parasite_only, filename = "figs/220923_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
-
-
 ### Find which locations belong to which region
 ```{r}
 sample_info_spdf <- SpatialPointsDataFrame(coords = sample_info[,c("X", "Y")], data = sample_info,
@@ -168,5 +181,9 @@ sample_info$district <- sample_info_region$NAME_2 %>% as.factor()
 ```{r}
 tmap_mode("view")
 p_tm <- tm_shape(ghana_map_1) + tm_polygons(alpha = .01) + tm_shape(sample_info_spdf) + tm_dots()
+```
+
+```{r}
+p_tm <- tm_shape(forest_reserves) + tm_polygons(alpha = .01)
 ```
 
