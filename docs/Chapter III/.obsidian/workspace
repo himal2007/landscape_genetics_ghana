@@ -7,8 +7,12 @@
         "id": "fc7bccd0c95d91b8",
         "type": "leaf",
         "state": {
-          "type": "empty",
-          "state": {}
+          "type": "markdown",
+          "state": {
+            "file": "revisions/Landscape genetics Ghana revision.md",
+            "mode": "source",
+            "source": false
+          }
         }
       }
     ],
@@ -52,6 +56,14 @@
               "type": "starred",
               "state": {}
             }
+          },
+          {
+            "id": "f900b0f140d99056",
+            "type": "leaf",
+            "state": {
+              "type": "recent-files",
+              "state": {}
+            }
           }
         ]
       }
@@ -73,6 +85,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "revisions/Landscape genetics Ghana revision.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -89,6 +102,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "revisions/Landscape genetics Ghana revision.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -110,10 +124,37 @@
             "type": "leaf",
             "state": {
               "type": "outline",
+              "state": {
+                "file": "revisions/Landscape genetics Ghana revision.md"
+              }
+            }
+          },
+          {
+            "id": "df96ed8905565f0f",
+            "type": "leaf",
+            "state": {
+              "type": "todo",
+              "state": {}
+            }
+          },
+          {
+            "id": "3e824ea8d826a72a",
+            "type": "leaf",
+            "state": {
+              "type": "calendar",
+              "state": {}
+            }
+          },
+          {
+            "id": "e426bb2a0a34f4b4",
+            "type": "leaf",
+            "state": {
+              "type": "stats-tracker",
               "state": {}
             }
           }
-        ]
+        ],
+        "currentTab": 5
       }
     ],
     "direction": "horizontal",
@@ -121,5 +162,8 @@
     "collapsed": true
   },
   "active": "fc7bccd0c95d91b8",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "Figures/ABG_AB1.png",
+    "revisions/Landscape genetics Ghana revision.md"
+  ]
 }
