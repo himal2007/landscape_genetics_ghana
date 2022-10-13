@@ -165,6 +165,7 @@ parasite_only$labels$size <- "Sample size"
 
 ggsave(plot = parasite_only, filename = "figs/220923_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
+
 ### Find which locations belong to which region
 ```{r}
 sample_info_spdf <- SpatialPointsDataFrame(coords = sample_info[,c("X", "Y")], data = sample_info,
