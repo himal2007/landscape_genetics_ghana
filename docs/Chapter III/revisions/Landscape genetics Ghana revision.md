@@ -5,7 +5,7 @@ Spatial heterogeneity is important to consider to understand persistence of dise
 
 A geographical unit where the disease transmission occurs via locally breeding vectors are termed as transmission zones (APOC and WHO 2010). They form the biological basis of intervention units and thus are very crucial to ensure that the interventions are at correct geographic scale. Onchocerciasis has a huge socio-economic impact in the poorest of the poor nations of the world (Cupp et al., 2011; Dunn et al., 2015). Therefore, the limited resources available in theses areas must be judiciously allocated to the most essential areas to achieve elimination of onchocerciasis transmission. The way forward to achieving the elimination goal is to align intervention units as close as possible to the natural transmission zones. However, delineating a transmission zone is a challenging task, and several tools have been deployed to understand transmission zones.
 
-We can gain some insights into the transmission zones based on prevalence mapping, where point prevalence data are interpolated spatially (O’Hanlon et al., 2016; Zouré et al., 2014). However, this is a static map and ignores the 'innate' connectivity between locations mediated by the movement of human host and the vectors. Population genetics has been used to infer the movement of the pathogen where movement can be indirectly measured by the genetic relatedness of samples across locations (Crawford et al., 2019; Hedtke et al., 2020; Small et al., 2019, more borad citations do not limit to just filarial nematodes, Adler et al., 2010; Agatsuma, 1987; Charalambous et al., 2005; Choi et al., 2016; Doyle et al., 2017). Nevertheless, the dispersal and thus, the geneflow of the parasites and the vectors are a subject of influence by the environmental features of the landscape. Therefore, population genetics alone cannot provide a complete picture of the transmission processes without incorporating spatial information and the environmental data which could be done with landscape gentics approach.  
+We can gain some insights into the transmission zones based on prevalence mapping, where point prevalence data are interpolated spatially (O’Hanlon et al., 2016; Zouré et al., 2014). However, this is a static map and ignores the 'innate' connectivity between locations mediated by the movement of human host and the vectors. Population genetics have been used to infer the movement of the pathogen where movement can be indirectly measured by the genetic relatedness of samples across locations (Crawford et al., 2019; Hedtke et al., 2020; Small et al., 2019, more borad citations do not limit to just filarial nematodes, Adler et al., 2010; Agatsuma, 1987; Charalambous et al., 2005; Choi et al., 2016; Doyle et al., 2017). Nevertheless, the dispersal and thus, the geneflow of the parasites and the vectors are a subject of influence by the environmental features of the landscape. Therefore, population genetics alone cannot provide a complete picture of the transmission processes without incorporating spatial information and the environmental data which could be done with landscape gentics approach.  
 
 Landscape genetics combine population genetics, landscape ecology and spatial analytical techniques to explicitly quantify the effects of landscape on evolutionary processes like gene-flow, drift, and selection (Balkenhol, 2016). Spatial information can be added in the form of sample geographic coordinates, remote sensing satellite image of different environmental and climate variables such as elevation, slope, distance to the water bodies etc. Landscape genetics involves a series of steps on how it could be used to infer transmission zones (Schwabl et al., 2017). First, we need to measure the genetic differentiation of the parasite and the vector populations sampled from different locations. Second, we can use those parameters of genetic differentiation to see which environmental features might govern the spatial pattern of genetic differentiation. Third, we can transform the most important environmental variables to resistance surface maps, which quantify the barriers to the geneflow of the study population in a pixel level landscape map (Hemming-Schroeder et al., 2018; Peterman, 2018). Finally, Resistance maps can be used to simulate the pattern of gene flow of the parasites and the vectors, giving us crucial insights on the corridors of movement between locations, their connectivity and thus, the possibility of transmission events (B. H. McRae et al., 2008).
 
@@ -19,8 +19,30 @@ The study area is a west-east transect in the ecological “transition zone” o
 
 
 ## Discussion
+For the first time in oncho - we use LG - high prev in central part with confluence - might need vect interventions as well
+
+No IBD - single and large TZ
+
+First clinical trials and SOR began - Ghana - double penalty
+
+Eliminating oncho transmission in connecting areas - widespread MDAi with vector intervention needed
+
+LG and PG output not representing the current processes
+
+at limitations = Single spatial scale - relation may differ in other scale - lack of significant correlation in dist to nearest river
+
+
 
 ## Miscellaneous
 
 In addition, there is a spatial heterogeneity in interventions as well, i.e. not all communities undergo.
 Onchocerciasis is a neglected filarial disease transmitted by the bites of blackflies and occurs predominantly in Africa and some parts of the Americas (Hill et al., 2019). Upon infection, the human host exhibits a range of chronic clinical manifestations such as severe skin itching, skin depigmentation, blindness and epilepsy or nodding syndrome in children (Basáñez et al., 2006; Colebunders et al., 2019). Despite interventions such as, vector control and mass drug administration with ivermectin (MDAi), onchocerciasis transmission persists in some foci.
+
+### Limitations and future directions
+*there were some limitations associated with the approach* 
+*The vector mobility maps we obtain with this approach might not necessarily correspond with vector density or vector biting rates. Here, we assome that high mobility in the areas of high prevalence   for The high vector mobility
+Incorporate abundance and ABR data
+Dense and stratified sampling
+Nuclear data
+Temporal sampling
+Can be translatable to other regions and VBD

@@ -7,5 +7,13 @@
       ],
       "key": "C"
     }
+  ],
+  "editor:toggle-highlight": [
+    {
+      "modifiers": [
+        "Alt"
+      ],
+      "key": "H"
+    }
   ]
 }
