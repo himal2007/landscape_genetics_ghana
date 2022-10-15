@@ -16,10 +16,11 @@ We have incorporated environmental data to the parasite genetic data and additio
 ## Methods
 ### Sampling locations
 The study area is a west-east transect in the ecological “transition zone” of Ghana: an area that includes the Savannah ecotype in the north, the forest ecotype in the south ( cite early literatures, Klutse et al., 2014), the Volta Lake bisecting the eastern parts of the transition zone, and the Bui National Park in the west (Figure 1). We chose this area for the study as there is ongoing persistence of onchocerciasis transmission despite decades of control efforts (Osei-Atweneboana et al., 2007; Otabil et al., 2019; Yaméogo, 2008). The elevation ranges from 70–525 m above sea level, and mean annual temperature and precipitation ranges from 24–29°C and 1077–1355 mm, respectively (Farr et al., 2007; Fick & Hijmans, 2017) 
-
+![[221015_ghana_sample_sites.png]]
 
 ## Discussion
-For the first time in oncho - we use LG - high prev in central part with confluence - might need vect interventions as well
+For the first time in oncho - we use LG - 
+high prev in central part with confluence - might need vect interventions as well
 
 No IBD - single and large TZ
 
@@ -34,6 +35,7 @@ at limitations = Single spatial scale - relation may differ in other scale - lac
 
 
 ## Miscellaneous
+
 
 In addition, there is a spatial heterogeneity in interventions as well, i.e. not all communities undergo.
 Onchocerciasis is a neglected filarial disease transmitted by the bites of blackflies and occurs predominantly in Africa and some parts of the Americas (Hill et al., 2019). Upon infection, the human host exhibits a range of chronic clinical manifestations such as severe skin itching, skin depigmentation, blindness and epilepsy or nodding syndrome in children (Basáñez et al., 2006; Colebunders et al., 2019). Despite interventions such as, vector control and mass drug administration with ivermectin (MDAi), onchocerciasis transmission persists in some foci.

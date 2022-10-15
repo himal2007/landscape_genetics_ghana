@@ -9,7 +9,7 @@ output:
     toc_depth: 4
 ---
 ```{r setup, echo=FALSE}
-knitr::opts_knit$set(root.dir = "C:/Users/19226876/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
 ```
 
 # Aim
@@ -27,6 +27,8 @@ library(tmap)
 library(raster)
 library(ggspatial)
 library(ggrepel)
+library(RColorBrewer)
+library(ggpattern)
 ```
 
 ```{r}
@@ -105,6 +107,7 @@ b.dem <- seq(min(ddf$DEM),max(ddf$DEM),length.out=100)
 ```
 
 ```{r}
+library(ggpattern)
 p <- ggplot() + 
   geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) +
   geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
@@ -113,11 +116,22 @@ p <- ggplot() +
   scale_alpha(range = c(0, 0.5), guide = "none") +
   coord_equal() + theme_void()
 
+map_data_pattern <- fortify(as_Spatial(bui_np_crop))
 ## Boundary
 p1 <- p + 
   geom_sf(data = ghana_map_1, col = "black", lwd = 1, lty = 1, alpha = 0.01) +
   # geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
-  geom_sf(data = bui_np_crop, col = "black", fill = "lightcyan3", lwd = 0.5, lty = 1, alpha = .9)+
+  # geom_sf(data = bui_np_crop, col = "black", fill = "lightcyan3", lwd = 0.5, lty = 1, alpha = .9)+
+   geom_map_pattern(data = map_data_pattern,
+      aes(map_id = id),
+      pattern = "stripe",
+      pattern_alpha = 1,
+      fill   = 'lightcyan3',
+      colour = 'black',
+      pattern_fill = "black",
+      pattern_angle = 45,
+      map    = map_data_pattern
+    ) +
   geom_sf(data = water_lines_perrennial, col = "steelblue", lwd = 0.8) +
   geom_sf(data = water_bodies, fill = "lightblue", col = "black", alpha = .9)+
   scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(7.627786, 8.809457),expand=c(0,0))+
@@ -151,7 +165,7 @@ vector_only <- direction + geom_point(data = sample_info_vectors, aes(X, Y, size
 
 vector_only$labels$size <- "Sample size"
 
-ggsave(plot = vector_only, filename = "figs/220923_sample_locations_vector_only.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+ggsave(plot = vector_only, filename = "figs/221015_sample_locations_vector_only.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
 #### Parasite samples
@@ -163,7 +177,7 @@ parasite_only <- direction + geom_point(data = sample_info_parasites, aes(X, Y, 
 
 parasite_only$labels$size <- "Sample size"
 
-ggsave(plot = parasite_only, filename = "figs/220923_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+ggsave(plot = parasite_only, filename = "figs/221015_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
 ### Find which locations belong to which region
@@ -186,5 +200,90 @@ p_tm <- tm_shape(ghana_map_1) + tm_polygons(alpha = .01) + tm_shape(sample_info_
 
 ```{r}
 p_tm <- tm_shape(forest_reserves) + tm_polygons(alpha = .01)
+```
+
+### Plot map of Ghana
+- with transition zone, riverlines and regions
+```{r}
+# png(filename = "Code/Project codes/docs/GT_sites.png", width = 5, height = 10, units = "in", res= 1000, bg = "transparent")
+par(mfrow = c(1,1))
+# plot(hill, col=grey(0:100/100), legend=FALSE, main='', axes = F, frame.plot = F, box = F)
+# # plot(alt, col=hcl.colors(100, palette = "Greens", rev = F, alpha=0.35), add=TRUE)
+# plot(alt, col = terrain.colors(10), alpha=0.5, add=TRUE)
+plot(st_geometry(ghana_map_1))
+plot(st_geometry(water_bodies), col = "lightblue", add= TRUE)
+
+plot(st_geometry(river_line_GT_crop_wgs84), col = "lightblue", add= TRUE, lwd = 1.5)
+plot(st_geometry(populations_wgs84), col = "red", pch = 17, add = TRUE)
+plot(st_geometry(bbox_GT_wgs84), add = T, lwd = 2, alpha = 0.8)
+# dev.off()
+```
+
+## Plot prevalence map with regions
+
+### Preparing the prevalence data
+```{r}
+prev_data <- read.csv("data/220301_prev_covs.csv")
+
+coordinates(prev_data) <- (prev_data[, c("LONG","LAT")])
+
+prev_data_sf <- prev_data %>% st_as_sf() 
+st_crs(prev_data_sf) = 32630
+
+prev_data_sf_wgs <- prev_data_sf %>% st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
+coordinates_prev <- data.frame(st_coordinates(prev_data_sf_wgs))
+
+prev_data_df <- prev_data_sf_wgs %>% as.data.frame()
+prev_data_df$LONG <- coordinates_prev$X
+prev_data_df$LAT <- coordinates_prev$Y  
+```
+
+### Visualise data
+```{r}
+p <- ggplot(m_1_utm_GT_crop) +
+  geom_sf(fill = "white")+ coord_sf(datum = sf::st_crs("+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"))+
+  geom_point(data = data, aes(LONG, LAT, fill = Prevalence), color = "black", size = 2, stroke = 1, shape = 21, alpha = .7)+ # plotting points with stroke
+  theme_void(base_family = "Arial", base_size = 16) +
+  scale_fill_gradientn(colours = mypalette(100)) +
+  xlab("Logitude") + ylab("Latitude") + labs(fill = "Onchocerciasis prevalence") +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0)) +  annotation_scale(location = "br", width_hint = 0.5)  +
+  annotation_north_arrow(location = "tl", which_north = "true",
+        pad_x = unit(0, "cm"), pad_y = unit(0.2, "cm"),
+        style = north_arrow_fancy_orienteering) +
+  theme(legend.position = "bottom", legend.key.size = unit(2, 'cm'), #change legend key size
+        legend.key.height = unit(.5, 'cm'), #change legend key height
+        legend.key.width = unit(1.5, 'cm')) +
+  guides(fill = guide_colourbar(title.position="top", title.hjust = 0.5))
+p
+
+ggsave(plot = p, filename = "docs/sample_sites.png", device = "png", dpi = 1000, width = 6, height = 3, units = "in", bg = "white" )
+```
+
+```{r}
+mypalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+p <- ggplot(ghana_map_1) + 
+  geom_sf(col = "black", lty = 1, alpha = 0.01) + coord_sf() +
+  geom_sf(data = bbox_buffer, alpha = 0) +
+  geom_sf(data = bui_np_crop, col = "black", lty = 2, alpha = 0)+ #fill = "lightcyan3",
+  # geom_sf(data = water_lines_perrennial, col = "steelblue", lwd = 0.8) +
+  # geom_sf(data = water_bodies, fill = "lightblue", col = "black", alpha = .9)+
+  # geom_point(data = prev_data_df, aes(LONG, LAT, fill = Prevalence), color = "black", size = 2, stroke = 1, shape = 21, alpha = .7)+ labs(fill = "Onchocerciasis prevalence") +
+  scale_fill_gradientn(colours = mypalette(100)) +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(7.627786, 8.809457),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(-2.475539, 0.194787),expand=c(0,0)) + 
+  # annotation_scale(location = "br", width_hint = 0.5) +
+  # annotation_north_arrow(location = "tl", which_north = "true", 
+  #       pad_x = unit(0.05, "in"), pad_y = unit(0.05, "in"),
+  #       style = north_arrow_fancy_orienteering) +
+  theme_void(base_family = "Arial", base_size = 16) +
+  theme(legend.position = "bottom", legend.key.size = unit(2, 'cm'), #change legend key size
+        legend.key.height = unit(.5, 'cm'), #change legend key height
+        legend.key.width = unit(1.5, 'cm')) +
+  guides(fill = guide_colourbar(title.position="top", title.hjust = 0.5))
+
+ggsave(plot = p, filename = "figs/221015_prev_sample_sites_2.png", device = "png", dpi = 500, width = 6, height = 3, units = "in", bg = "transparent" )
+
+ggsave(plot = p, filename = "figs/221015_for_BV_MAP.png", device = "png", dpi = 500, width = 5, height = 2.5, units = "in", bg = "transparent" )
 ```
 
