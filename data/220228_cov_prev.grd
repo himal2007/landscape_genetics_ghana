@@ -1,0 +1,25 @@
+[general]
+creator=R package 'raster'
+created=2022-02-28 15:15:23
+[georeference]
+nrows=141
+ncols=320
+xmin=557641.073518333
+ymin=844163.161371272
+xmax=851721.073518333
+ymax=974165.161371272
+projection=+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs
+[data]
+datatype=FLT4S
+byteorder=little
+nbands=33
+bandorder=BIL
+minvalue=69.2167535974302:239.370223999026:92.0000000000003:64.9999999999991:1141.12670898443:319.370239257815:181.861877441409:136.493255615235:241.542938232424:244.861877441409:256.370239257815:223.287841796877:1076.81066894531:171:0.999999999998499:59.0146903991706:428.392669677736:13.9999999999985:148.086303710935:348.225982666018:24.7945239439943:18.6978468851338:0:-0.131392315500167:-0.095212158834628:4:-13010.266330436:-0.256470112332768:25.7916666666667:-0.246252191008976:-1.31023341747545:0.0191632863738997:0
+maxvalue=525.75507444181:282.618560791017:115.999999999999:71:1511.1516113281:373.912902832033:208.565292358397:174:282.957489013671:288:304:264:1371.36376953118:247.000000000001:12:78.7696838378905:604:58.9208641052228:292.214233398435:604:34.6590238503464:25.593758628406:5.33137773187204:0.641647296193888:0.414689573841792:17:309653.268096525:0.0384347774088383:184.641666666667:21.9588755461876:163.504060831699:0.337264323971557:13.0189982127897
+nodatavalue=-3.4e+38
+[legend]
+legendtype=
+values=
+color=
+[description]
+layername=elevation:annual_mean_temperature:annual_diurnal_range:isothermality:temperature_seasonality:maximum_temperature_warmest_month:minimum_temperature_coldest_month:temperature_annual_range:mean_temperature_wettest_quarter:mean_temperature_driest_quarter:mean_temperature_warmest_quarter:mean_temperature_coldest_quarter:annual_precpitation:precipitation_wettest_month:precipitation_driest_month:precipitation_seasonality:precipitation_wettest_quarter:precipitation_dreist_quarter:precipitation_warmest_quarter:precipitation_coldest_quarter:LST_day_01:LST_night_01:slope:NDVI01_GT_utm:EVI01_GT_utm:LC01_GT_utm:FC_GT_utm:TCW01_GT_utm:SM0001_GT_utm:distwater_GT_utm:popden0001_GT_utm:housing2001_GT_utm:nightlights0001_GT_utm

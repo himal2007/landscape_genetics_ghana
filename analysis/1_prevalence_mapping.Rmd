@@ -1,0 +1,247 @@
+---
+title: "Ghana prevalence data from ESPEN"
+author: "Himal Shrestha"
+date: "23/02/2022"
+output: 
+  md_document:
+    variant: markdown_github
+    toc: yes
+    toc_depth: 4
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+```
+
+## Introduction
+The data is obtained from [ESPEN database](https://espen.afro.who.int/tools-resources/download-data)
+
+## Load libraries
+```{r, message=FALSE}
+extrafont::loadfonts(device="win", quiet = T)
+```
+
+```{r, message=FALSE}
+suppressMessages({library(sf);
+  library(tidyverse);
+  # library(ggplot2);
+  library(rgdal);
+  # library(leaflet);
+  library(raster);
+  library(RColorBrewer);
+  # library(tmap);
+  # library(gstat);
+  # library(tidyr);
+  library(rgeos);
+  library(ggspatial);
+  })
+```
+
+## Loading the data
+
+```{r}
+ghana_prev_site <- read.csv("data/data-GH-Oncho-sitelevel.csv", header = T)
+
+ghana_prev_clean <- ghana_prev_site %>% filter(Georeliability == 1)
+
+ghana_prev_clean2 <- ghana_prev_clean %>% dplyr::select(IU_NAME, IU_ID, LocationName, Longitude, Latitude, SurveyYear, Period, SurveyMonth, Method_0, Method_1, Method_2, Examined, Positive, Prevalence) %>% mutate(IU_NAME = as.factor(IU_NAME), IU_ID = as.numeric(IU_ID), LocationName = as.factor(LocationName), Longitude = as.numeric(Longitude), Latitude  = as.numeric(Latitude), SurveyYear = as.numeric(SurveyYear), SurveyMonth = as.factor(SurveyMonth), Period = as.factor(Period), Method_0 = as.factor(Method_0), Method_1 = as.factor(Method_1), Method_2 = as.factor(Method_2), Examined = as.numeric(Examined), Positive = as.numeric(Positive), Prevalence = as.numeric(Prevalence))
+
+summary(ghana_prev_clean2)
+# All the data from skin snipping - no REMO data
+
+# Select the data used for mapping
+ghana_prev_clean3 <- ghana_prev_clean2 %>% dplyr::select(Longitude, Latitude, SurveyYear, Period, Method_0, Examined, Positive, Prevalence) %>% mutate()
+
+table(ghana_prev_clean3$Period, ghana_prev_clean3$Method_0)
+# Most of the data that does not have the label were collected between 2006 - 2016
+```
+
+```{r}
+## Ghana map boundary - level 1/updated
+ghana_map_1 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_1.shp", verbose = FALSE) %>% st_as_sf()
+```
+
+### Convert to spatial object
+```{r}
+coordinates(ghana_prev_clean3) <- (ghana_prev_clean3[, c("Longitude","Latitude")])
+
+ghana_prev_sf <- ghana_prev_clean3 %>% st_as_sf() 
+st_crs(ghana_prev_sf) = 4326
+
+# convert to UTM - planar CRS transformation
+epsg_ghana_UTM <- 32630
+st_crs(epsg_ghana_UTM)$proj4string
+utm_proj_ghana <- st_crs(epsg_ghana_UTM)$proj4string  # "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+
+ghana_prev_sf <- ghana_prev_sf %>% st_transform(crs = utm_proj_ghana)
+ghana_prev_sp <- as(ghana_prev_sf, "Spatial")
+```
+
+
+### Spatial filtering to transition region
+```{r}
+bbox_transition <- readRDS("data/bbox_buffer_transition_ghana.rds") %>% st_as_sf()
+
+# filtering the prevalence data
+GT_prev_sp <- intersect(x = ghana_prev_sp, y = bbox_transition)
+```
+
+```{r}
+GT_prev_clean <- data.frame(GT_prev_sp)
+GT_prev_clean <- GT_prev_clean %>% mutate(LONG = coords.x1, LAT = coords.x2, optional = NULL) %>% mutate(coords.x1 = NULL, coords.x2 = NULL, Longitude = NULL, Latitude = NULL)
+
+## Omitting observations with missing data
+GT_prev_clean <- na.omit(GT_prev_clean)
+
+## Selecting only mapping data
+GT_prev_mapping <- GT_prev_clean %>% filter(Method_0 == "Mapping")
+```
+
+### Find duplicate observations
+```{r}
+find_duplicate <- function(df){
+  i <- duplicated(df[, c("LONG", "LAT")])
+  long_dup <- df[i, ]$LONG
+  lat_dup <- df[i, ]$LAT
+  duplicate_sites <- df %>% filter(LONG %in% long_dup & LAT %in% lat_dup)
+  return(duplicate_sites)
+}
+
+(duplicate_mf <- find_duplicate(df = GT_prev_mapping))
+```
+
+```{r}
+GT_prev_mapdiff <- GT_prev_mapping[ !(GT_prev_mapping$LONG %in% duplicate_mf$LONG), ]
+GT_prev_mapdiff %>% summary ## all collected before 2001
+ 
+# Clean duplicate mf. If all the variables are same, keep only one observation. For, the ones with different prevalence, calculate average  
+duplicate_mf2 <- duplicate_mf %>% distinct()
+GT_unique_prev <- duplicate_mf2 %>% group_by(LONG, LAT) %>% summarise(Examined = sum(Examined), Positive = sum(Positive), Prevalence = Positive/Examined) 
+
+## select required columns and merge the dataframe
+GT_unique_prevmap <- GT_prev_mapdiff %>% dplyr::select(LONG, LAT, Examined, Positive, Prevalence) %>% rbind(GT_unique_prev)
+```
+
+## Visualise the prevalence data
+### Prevalence histogram
+```{r}
+hist(GT_unique_prevmap$Prevalence, main = "",
+     xlab="Onchocerciasis prevalence", ylab = ("Frequency"),
+     border="black", 
+     col="darkgrey", xlim=c(0,1), cex.lab=1.5, cex.axis=1, cex.main=2, cex.sub=2,
+    #  ylim = c(0,225),
+     las=1, 
+     breaks=25)
+```
+
+
+### Ghana prevalence on a map
+```{r}
+# GT_prevmap_sf <- st_as_sf(x = GT_unique_prevmap, coords = c('LONG','LAT'), crs= "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+
+ghana_map_1_sfutm <- ghana_map_1 %>% st_transform(crs = "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+```
+
+```{r}
+mypalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+
+p <- ggplot(ghana_map_1_sfutm) + 
+  geom_sf(col = "black", lty = 1, alpha = 0.01) + coord_sf() +
+  geom_sf(data = bbox_transition, alpha = 0) +
+  geom_point(data = GT_unique_prevmap, aes(LONG, LAT, fill = Prevalence), color = "black", size = 2, stroke = 1, shape = 21, alpha = .7)+ labs(fill = "Onchocerciasis prevalence") +
+  scale_fill_gradientn(colours = mypalette(100)) +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844447.4, 973827),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557845.6, 851520.9),expand=c(0,0)) + 
+  annotation_scale(location = "br", width_hint = 0.5) +
+  annotation_north_arrow(location = "tl", which_north = "true",
+        pad_x = unit(0.05, "in"), pad_y = unit(0.05, "in"),
+        style = north_arrow_fancy_orienteering) +
+  theme_void(base_family = "Arial", base_size = 16) +
+  theme(legend.position = "bottom", legend.key.size = unit(2, 'cm'), #change legend key size
+        legend.key.height = unit(.5, 'cm'), #change legend key height
+        legend.key.width = unit(1.5, 'cm')) +
+  guides(fill = guide_colourbar(title.position="top", title.hjust = 0.5))
+
+p
+```
+
+
+# Variable selection
+## Loading the data
+```{r}
+# GT_prev <- read.csv("data/220228_GT_uniqueprev.csv")
+cov_prev <- stack("data/220228_cov_prev.grd")
+```
+
+## Extract point data from raster covriates
+
+```{r}
+covs <- raster::extract(cov_prev, GT_unique_prevmap[c("LONG","LAT")], na.rm = TRUE, df = TRUE)
+
+data_c_covs <- as.data.frame(cbind(GT_unique_prevmap, covs))
+data_c_covs <- na.omit(data_c_covs)
+data_c_covs %>% head()
+```
+
+
+## Prevalence data: Variable selection
+```{r}
+data_c_covs[, c("Examined", "Positive", "LONG", "LAT", "ID")] <- NULL
+```
+
+```{r}
+temp_covariates <- c(names(data_c_covs)[c(3:13, 22:23)], "Prevalence")
+temp_data <- data_c_covs[, temp_covariates]
+
+precip_covariates <- c(names(data_c_covs)[14:21], "Prevalence")
+precip_data <- data_c_covs[, precip_covariates]
+
+elev_data <- data_c_covs[, c("elevation", "slope", "Prevalence")]
+vegind_data <- data_c_covs[, c("EVI01_GT_utm", "NDVI01_GT_utm", "Prevalence")]
+hydro_data <- data_c_covs[, c("FC_GT_utm", "TCW01_GT_utm", "SM0001_GT_utm", "distwater_GT_utm", "Prevalence")]
+
+sociodem_data <- data_c_covs[, c("popden0001_GT_utm",
+                          "housing2001_GT_utm", "nightlights0001_GT_utm", "Prevalence")]
+```
+
+```{r}
+covs_prev <- data_c_covs %>% dplyr::select(annual_mean_temperature, annual_diurnal_range, temperature_seasonality, maximum_temperature_warmest_month, minimum_temperature_coldest_month, temperature_annual_range, mean_temperature_wettest_quarter, mean_temperature_driest_quarter, mean_temperature_warmest_quarter, mean_temperature_coldest_quarter, isothermality, LST_day_01, LST_night_01, annual_precpitation, precipitation_wettest_month, precipitation_driest_month, precipitation_wettest_quarter, precipitation_dreist_quarter, precipitation_warmest_quarter, precipitation_coldest_quarter, precipitation_seasonality, elevation, slope, NDVI01_GT_utm, EVI01_GT_utm, FC_GT_utm, distwater_GT_utm, TCW01_GT_utm, SM0001_GT_utm, popden0001_GT_utm, housing2001_GT_utm, nightlights0001_GT_utm)
+
+names(covs_prev) <- c("BIO1", "BIO2", paste0("BIO",4:11), "BIO3", paste0("BIO",c(12:14,16:19)), "BIO15", "LSTD", "LSTN", "DEM", "SLP", "NDVI", "EVI", "FC", "DW", "TCW", "SM", "PD", "IHP", "NL")
+```
+
+### PCA analysis
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+
+res.pca <- PCA(covs_prev, scale.unit = TRUE, graph = FALSE)
+p_pca <- fviz_pca_var(res.pca, col.var = "black") + ggtitle("")
+p_pca
+```
+
+```{r}
+# eig.val <- get_eigenvalue(res.pca)
+```
+```{r}
+p_scree <- fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 50)) + ggtitle("")
+p_scree
+```
+
+```{r}
+# var <- get_pca_var(res.pca)
+```
+
+```{r}
+# p <- fviz_cos2(res.pca, choice = "var", axes = 1:3)
+```
+
+
++ Upto 5 axis included because the cumulative variance explained is greater than 80%
+
+```{r}
+p_contrib <- fviz_contrib(res.pca, choice = "var", axes = 1:5, top = 100) + theme(axis.text.x = element_text(angle=90)) + ggtitle("")
+p_contrib
+```
+
