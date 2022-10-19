@@ -79,6 +79,9 @@ hill <- hillShade(slope, aspect, 40, 270)
 ### Get the sample information data
 ```{r}
 sample_info <- read.csv("data/ghana_sampling_sites.csv", stringsAsFactors = TRUE)
+
+# to identify the regions for the merged communities
+sample_info <- read.csv("data/ghana_sampling_sites_2.csv", stringsAsFactors = TRUE)
 ```
 
 ### Getting river data
@@ -189,8 +192,11 @@ sample_info_region <- sample_info_spdf %over% ghana_map_2
 sample_info_region <- sample_info_region %>% dplyr::select(NAME_1, NAME_2)
 
 sample_info$region <- sample_info_region$NAME_1 %>% as.factor()
-
 sample_info$district <- sample_info_region$NAME_2 %>% as.factor()
+```
+
+```{r}
+sample_info %>% write.csv("data/221019_ghana_sample_stes_no_merged_com.csv")
 ```
 
 ```{r}
