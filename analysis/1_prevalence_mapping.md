@@ -10,40 +10,24 @@ extrafont::loadfonts(device="win", quiet = T)
 ```
 
 ``` r
-suppressMessages({library(sf);
+suppressMessages({
+  library(sf);
   library(tidyverse);
-  # library(ggplot2);
   library(rgdal);
-  # library(leaflet);
   library(raster);
   library(RColorBrewer);
-  # library(tmap);
-  # library(gstat);
-  # library(tidyr);
   library(rgeos);
   library(ggspatial);
+  library(INLA);
+  library(INLAutils);
+  library(tictoc);
+  library(sp);
+  library(cowplot);
+  library(ggcorrplot);
+  library(FactoMineR)
+  library(factoextra)
   })
 ```
-
-    ## Warning: package 'sf' was built under R version 4.1.2
-
-    ## Warning: package 'tidyverse' was built under R version 4.1.1
-
-    ## Warning: package 'ggplot2' was built under R version 4.1.1
-
-    ## Warning: package 'tibble' was built under R version 4.1.2
-
-    ## Warning: package 'tidyr' was built under R version 4.1.1
-
-    ## Warning: package 'readr' was built under R version 4.1.2
-
-    ## Warning: package 'rgdal' was built under R version 4.1.2
-
-    ## Warning: package 'raster' was built under R version 4.1.3
-
-    ## Warning: package 'rgeos' was built under R version 4.1.2
-
-    ## Warning: package 'ggspatial' was built under R version 4.1.2
 
 ## Loading the data
 
@@ -53,15 +37,7 @@ ghana_prev_site <- read.csv("data/data-GH-Oncho-sitelevel.csv", header = T)
 ghana_prev_clean <- ghana_prev_site %>% filter(Georeliability == 1)
 
 ghana_prev_clean2 <- ghana_prev_clean %>% dplyr::select(IU_NAME, IU_ID, LocationName, Longitude, Latitude, SurveyYear, Period, SurveyMonth, Method_0, Method_1, Method_2, Examined, Positive, Prevalence) %>% mutate(IU_NAME = as.factor(IU_NAME), IU_ID = as.numeric(IU_ID), LocationName = as.factor(LocationName), Longitude = as.numeric(Longitude), Latitude  = as.numeric(Latitude), SurveyYear = as.numeric(SurveyYear), SurveyMonth = as.factor(SurveyMonth), Period = as.factor(Period), Method_0 = as.factor(Method_0), Method_1 = as.factor(Method_1), Method_2 = as.factor(Method_2), Examined = as.numeric(Examined), Positive = as.numeric(Positive), Prevalence = as.numeric(Prevalence))
-```
 
-    ## Warning in mask$eval_all_mutate(quo): NAs introduced by coercion
-
-    ## Warning in mask$eval_all_mutate(quo): NAs introduced by coercion
-
-    ## Warning in mask$eval_all_mutate(quo): NAs introduced by coercion
-
-``` r
 summary(ghana_prev_clean2)
 ```
 
@@ -184,59 +160,8 @@ find_duplicate <- function(df){
   return(duplicate_sites)
 }
 
-(duplicate_mf <- find_duplicate(df = GT_prev_mapping))
+duplicate_mf <- find_duplicate(df = GT_prev_mapping)
 ```
-
-    ##    SurveyYear      Period Method_0 Examined Positive Prevalence     LONG
-    ## 1        1980 Before 2001  Mapping      162      116 0.71604938 702844.5
-    ## 2        2004 2001 - 2005  Mapping      663       51 0.07692308 702844.5
-    ## 3        1976 Before 2001  Mapping      168       97 0.57738095 558336.0
-    ## 4        1976 Before 2001  Mapping      168       97 0.57738095 558336.0
-    ## 5        1987 Before 2001  Mapping      104       52 0.50000000 567145.2
-    ## 6        1987 Before 2001  Mapping      104       52 0.50000000 567145.2
-    ## 7        1987 Before 2001  Mapping      175       58 0.33142857 579830.3
-    ## 8        1987 Before 2001  Mapping      175       58 0.33142857 579830.3
-    ## 9        1987 Before 2001  Mapping      106       50 0.47169811 579830.3
-    ## 10       1987 Before 2001  Mapping      102       48 0.47058824 579830.3
-    ## 11       1987 Before 2001  Mapping      156      129 0.82692308 717133.8
-    ## 12       1980 Before 2001  Mapping      112       66 0.58928571 571563.1
-    ## 13       1980 Before 2001  Mapping      112       66 0.58928571 571563.1
-    ## 14       1987 Before 2001  Mapping      155      129 0.83225806 717133.8
-    ## 15       1987 Before 2001  Mapping       37        4 0.10810811 584792.7
-    ## 16       1987 Before 2001  Mapping       37        4 0.10810811 584792.7
-    ## 17       1987 Before 2001  Mapping       67       20 0.29850746 593631.1
-    ## 18       1987 Before 2001  Mapping       67       20 0.29850746 593631.1
-    ## 19       1980 Before 2001  Mapping      312      127 0.40705128 588064.2
-    ## 20       1994 Before 2001  Mapping      102        2 0.01960784 588064.2
-    ## 21       1980 Before 2001  Mapping      186       78 0.41935484 566577.5
-    ## 22       1989 Before 2001  Mapping      453       37 0.08167770 566577.5
-    ## 23       1989 Before 2001  Mapping      443      104 0.23476298 565057.6
-    ## 24       1994 Before 2001  Mapping       46        5 0.10869565 565057.6
-    ##         LAT
-    ## 1  874796.6
-    ## 2  874796.6
-    ## 3  937403.0
-    ## 4  937403.0
-    ## 5  935204.7
-    ## 6  935204.7
-    ## 7  910741.9
-    ## 8  910741.9
-    ## 9  910741.9
-    ## 10 910741.9
-    ## 11 884817.5
-    ## 12 926367.0
-    ## 13 926367.0
-    ## 14 884817.5
-    ## 15 917545.8
-    ## 16 917545.8
-    ## 17 904296.0
-    ## 18 904296.0
-    ## 19 861895.4
-    ## 20 861895.4
-    ## 21 892960.3
-    ## 22 892960.3
-    ## 23 856705.3
-    ## 24 856705.3
 
 ``` r
 GT_prev_mapdiff <- GT_prev_mapping[ !(GT_prev_mapping$LONG %in% duplicate_mf$LONG), ]
@@ -262,11 +187,7 @@ GT_prev_mapdiff %>% summary ## all collected before 2001
 # Clean duplicate mf. If all the variables are same, keep only one observation. For, the ones with different prevalence, calculate average  
 duplicate_mf2 <- duplicate_mf %>% distinct()
 GT_unique_prev <- duplicate_mf2 %>% group_by(LONG, LAT) %>% summarise(Examined = sum(Examined), Positive = sum(Positive), Prevalence = Positive/Examined) 
-```
 
-    ## `summarise()` has grouped output by 'LONG'. You can override using the `.groups` argument.
-
-``` r
 ## select required columns and merge the dataframe
 GT_unique_prevmap <- GT_prev_mapdiff %>% dplyr::select(LONG, LAT, Examined, Positive, Prevalence) %>% rbind(GT_unique_prev)
 ```
@@ -285,7 +206,7 @@ hist(GT_unique_prevmap$Prevalence, main = "",
      breaks=25)
 ```
 
-![](1_prevalence_mapping_files/figure-markdown_github/unnamed-chunk-10-1.png)
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 ### Ghana prevalence on a map
 
@@ -322,14 +243,13 @@ p <- ggplot(ghana_map_1_sfutm) +
 p
 ```
 
-![](1_prevalence_mapping_files/figure-markdown_github/unnamed-chunk-12-1.png)
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 # Variable selection
 
 ## Loading the data
 
 ``` r
-# GT_prev <- read.csv("data/220228_GT_uniqueprev.csv")
 cov_prev <- stack("data/220228_cov_prev.grd")
 ```
 
@@ -340,104 +260,12 @@ covs <- raster::extract(cov_prev, GT_unique_prevmap[c("LONG","LAT")], na.rm = TR
 
 data_c_covs <- as.data.frame(cbind(GT_unique_prevmap, covs))
 data_c_covs <- na.omit(data_c_covs)
-data_c_covs %>% head()
 ```
-
-    ##       LONG      LAT Examined Positive Prevalence ID elevation
-    ## 1 603634.2 865620.0      108       29 0.26851852  1  256.7227
-    ## 2 588112.0 909812.9      193       27 0.13989637  2  109.1577
-    ## 3 614553.8 907662.3       46        2 0.04347826  3  108.7562
-    ## 4 603122.1 862178.0      281      153 0.54448399  4  264.8680
-    ## 7 568861.2 886549.3      290        6 0.02068966  5  241.4167
-    ## 8 578181.1 919744.7       29        5 0.17241379  6  114.9692
-    ##   annual_mean_temperature annual_diurnal_range isothermality
-    ## 1                260.3126              96.0000      67.00000
-    ## 2                275.1758             104.0000      67.00000
-    ## 3                276.0000             105.0000      67.00000
-    ## 4                259.0929              95.0000      67.00000
-    ## 7                265.0000              99.5442      66.12994
-    ## 8                275.0000             104.9360      66.57626
-    ##   temperature_seasonality maximum_temperature_warmest_month
-    ## 1                1370.422                          342.8198
-    ## 2                1367.420                          361.0202
-    ## 3                1337.107                          362.0000
-    ## 4                1349.225                          341.0929
-    ## 7                1371.592                          350.4142
-    ## 8                1370.418                          360.9129
-    ##   minimum_temperature_coldest_month temperature_annual_range
-    ## 1                          200.8198                 142.0000
-    ## 2                          206.6859                 154.3343
-    ## 3                          207.0000                 155.0000
-    ## 4                          200.5943                 140.4986
-    ## 7                          201.0000                 149.4143
-    ## 8                          204.5763                 156.3367
-    ##   mean_temperature_wettest_quarter mean_temperature_driest_quarter
-    ## 1                         266.3932                        265.3126
-    ## 2                         280.8213                        279.1758
-    ## 3                         282.0000                        280.0000
-    ## 4                         265.0929                        264.0929
-    ## 7                         270.1299                        270.4142
-    ## 8                         281.0000                        278.9129
-    ##   mean_temperature_warmest_quarter mean_temperature_coldest_quarter
-    ## 1                         279.8198                         243.9003
-    ## 2                         295.1758                         258.6657
-    ## 3                         295.0000                         259.4172
-    ## 4                         278.0929                         243.0929
-    ## 7                         284.0000                         247.4523
-    ## 8                         295.0000                         258.0640
-    ##   annual_precpitation precipitation_wettest_month precipitation_driest_month
-    ## 1            1245.982                    192.5073                          6
-    ## 2            1145.575                    192.3343                          4
-    ## 3            1187.566                    201.8696                          4
-    ## 4            1247.350                    190.8158                          6
-    ## 7            1171.430                    184.8701                          6
-    ## 8            1123.089                    191.0000                          4
-    ##   precipitation_seasonality precipitation_wettest_quarter
-    ## 1                        62                      478.7680
-    ## 2                        66                      446.0000
-    ## 3                        66                      458.8696
-    ## 4                        62                      479.0617
-    ## 7                        63                      458.4558
-    ## 8                        66                      436.1525
-    ##   precipitation_dreist_quarter precipitation_warmest_quarter
-    ## 1                     46.91943                      269.7726
-    ## 2                     33.00000                      224.0000
-    ## 3                     32.00000                      226.0000
-    ## 4                     47.74456                      273.1503
-    ## 7                     44.00000                      253.0000
-    ## 8                     32.00000                      216.5763
-    ##   precipitation_coldest_quarter LST_day_01 LST_night_01      slope
-    ## 1                      396.7682   30.07287     19.94475 1.33048761
-    ## 2                      408.5746   30.90093     21.46735 0.58675325
-    ## 3                      429.0260   31.43398     21.12778 0.07920054
-    ## 4                      393.3049   29.87246     20.07475 1.48367167
-    ## 7                      381.7401   30.34359     20.45431 0.45684439
-    ## 8                      409.3597   29.26442     23.61282 0.35127243
-    ##   NDVI01_GT_utm EVI01_GT_utm LC01_GT_utm    FC_GT_utm TCW01_GT_utm
-    ## 1     0.5244576    0.3339696           9 1.742969e+01   -0.2002104
-    ## 2     0.4556449    0.2746002          10 1.183467e+05   -0.1810302
-    ## 3     0.5049389    0.3101701           9 1.519873e+00   -0.1903145
-    ## 4     0.5310169    0.3493243           9 6.029897e+01   -0.2011503
-    ## 7     0.4929552    0.3225602           9 6.116869e+00   -0.1873442
-    ## 8     0.4829980    0.2926895           9 1.261551e+05   -0.1592649
-    ##   SM0001_GT_utm distwater_GT_utm popden0001_GT_utm housing2001_GT_utm
-    ## 1      43.14625         2.357787         64.345070         0.09177501
-    ## 2      30.68377         0.277513         10.470739         0.05658718
-    ## 3      33.54677         2.544718          9.227164         0.04275714
-    ## 4      43.91314         1.476453         64.345070         0.11095008
-    ## 7      36.54363         4.867418         21.702955         0.04898965
-    ## 8      28.79205         0.475351         16.636055         0.03894942
-    ##   nightlights0001_GT_utm
-    ## 1                      0
-    ## 2                      0
-    ## 3                      0
-    ## 4                      0
-    ## 7                      0
-    ## 8                      0
 
 ## Prevalence data: Variable selection
 
 ``` r
+data_c_covs2 <- data_c_covs
 data_c_covs[, c("Examined", "Positive", "LONG", "LAT", "ID")] <- NULL
 ```
 
@@ -465,26 +293,12 @@ names(covs_prev) <- c("BIO1", "BIO2", paste0("BIO",4:11), "BIO3", paste0("BIO",c
 ### PCA analysis
 
 ``` r
-library(FactoMineR)
-```
-
-    ## Warning: package 'FactoMineR' was built under R version 4.1.2
-
-``` r
-library(factoextra)
-```
-
-    ## Warning: package 'factoextra' was built under R version 4.1.2
-
-    ## Welcome! Want to learn more? See two factoextra-related books at https://goo.gl/ve3WBa
-
-``` r
 res.pca <- PCA(covs_prev, scale.unit = TRUE, graph = FALSE)
 p_pca <- fviz_pca_var(res.pca, col.var = "black") + ggtitle("")
 p_pca
 ```
 
-![](1_prevalence_mapping_files/figure-markdown_github/unnamed-chunk-18-1.png)
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
 
 ``` r
 # eig.val <- get_eigenvalue(res.pca)
@@ -495,7 +309,7 @@ p_scree <- fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 50)) + ggtitle("")
 p_scree
 ```
 
-![](1_prevalence_mapping_files/figure-markdown_github/unnamed-chunk-20-1.png)
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
 
 ``` r
 # var <- get_pca_var(res.pca)
@@ -513,4 +327,862 @@ p_contrib <- fviz_contrib(res.pca, choice = "var", axes = 1:5, top = 100) + them
 p_contrib
 ```
 
-![](1_prevalence_mapping_files/figure-markdown_github/unnamed-chunk-23-1.png)
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-23-1.png)<!-- -->
+
+#### Temperature variables
+
+``` r
+corr <- cor(temp_data[, 1:13])
+p.mat <- cor_pmat(temp_data[, 1:13])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-24-1.png)<!-- -->
+
+-   `LST_night_01`, `annual_mean_temperature`,
+    `temperature_annual_range`, `temperature_seasonality`,
+    `minimum_temperature_coldest_month`
+
+``` r
+temp_covselected <- c("LST_night_01", "annual_mean_temperature", "temperature_annual_range", "temperature_seasonality", "minimum_temperature_coldest_month")
+temp_selected <- data_c_covs[,temp_covselected]
+corr <- cor(temp_selected)
+p.mat <- cor_pmat(temp_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-25-1.png)<!-- -->
+
+-   `temperature_annual_range` not included as it is correlated with
+    `annual_mean_temperature` - \> 0.6
+
+``` r
+temp_covselected <- c("LST_night_01", "annual_mean_temperature", "temperature_seasonality", "minimum_temperature_coldest_month")
+```
+
+#### Precipitation variables
+
+``` r
+corr <- cor(precip_data[, 1:8])
+p.mat <- cor_pmat(precip_data[, 1:8])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
+
+-   “precipitation_coldest_quarter”, “annual_precpitation”,
+    “precipitation_warmest_quarter”
+
+``` r
+precip_covselected <- c("precipitation_coldest_quarter", "annual_precpitation", "precipitation_warmest_quarter")
+precip_selected <- data_c_covs[, precip_covselected]
+corr <- cor(precip_selected)
+p.mat <- cor_pmat(precip_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+```
+
+-   `precipitation_warmest_quarter` excluded
+
+``` r
+precip_covselected <- c("precipitation_coldest_quarter", "annual_precpitation")
+```
+
+#### Elevation/slope
+
+``` r
+corr <- cor(elev_data[, 1:2])
+p.mat <- cor_pmat(elev_data[, 1:2])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
++ both selected
+
+``` r
+elev_covselected <- c("elevation", "slope")
+```
+
+#### Vegind data
+
+``` r
+corr <- cor(vegind_data[, 1:2])
+p.mat <- cor_pmat(vegind_data[, 1:2])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-32-1.png)<!-- -->
++ `EVI01_GT_utm` selected
+
+``` r
+vegind_covselected <- "EVI01_GT_utm"
+```
+
+#### Hydro data
+
+``` r
+corr <- cor(hydro_data[, 1:4])
+p.mat <- cor_pmat(hydro_data[, 1:4])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
++ All selected
+
+``` r
+hydro_covselected <- c("FC_GT_utm", "TCW01_GT_utm", "SM0001_GT_utm", "distwater_GT_utm")
+```
+
+#### Socio demographic data
+
+``` r
+corr <- cor(sociodem_data[, 1:3])
+p.mat <- cor_pmat(sociodem_data[, 1:4])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
++ All selected
+
+``` r
+sociodem_covselected <- c("popden0001_GT_utm", "housing2001_GT_utm", "nightlights0001_GT_utm")
+```
+
+#### Round 1 covs
+
+``` r
+selected_covs_round1 <- c(temp_covselected, precip_covselected, elev_covselected, vegind_covselected, hydro_covselected, sociodem_covselected)
+```
+
+``` r
+corr <- cor(data_c_covs[, selected_covs_round1])
+p.mat <- cor_pmat(data_c_covs[, selected_covs_round1])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-39-1.png)<!-- -->
+
+-   `elevation`, `soil_moisture`, `EVI`, `popden0001_GT_utm` removed
+
+``` r
+selected_covs_r1 <- selected_covs_round1[c(-7,-9,-12, -14)]
+corr <- cor(data_c_covs[, selected_covs_r1])
+p.mat <- cor_pmat(data_c_covs[, selected_covs_r1])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-40-1.png)<!-- -->
+
+``` r
+prevcovs_selected <- cov_prev[[selected_covs_r1]]
+```
+
+-   annual mean temperature also removed - it’s similar to LST and
+    almost correlated to other variables
+
+``` r
+selected_covs_r1 <- c("LST_night_01", "temperature_seasonality", "minimum_temperature_coldest_month", "precipitation_coldest_quarter", "annual_precpitation", "slope", "FC_GT_utm", "TCW01_GT_utm", "distwater_GT_utm", "housing2001_GT_utm", "nightlights0001_GT_utm")
+
+data_c_selectedcovs <- data_c_covs[, selected_covs_r1]
+data_c_selectedcovs$Prevalence <- data_c_covs$Prevalence
+
+# prev_selectedcovs_long <- to_long(data = data_c_selectedcovs)
+# prev_selectedcovs_long$Prevalence <- prev_selectedcovs_long$Prevalence * 100
+# prev_selectedcovs_long$covariates <- as.factor(prev_selectedcovs_long$covariates)
+```
+
+-   night lights removed as majority of values 0
+-   TCW removed all negative values in data
+-   Soil moisture instead of precipitation at coldest quarter -
+    interpretable
+
+``` r
+selected_covs_r1 <- c("LST_night_01", "temperature_seasonality", "minimum_temperature_coldest_month", "SM0001_GT_utm", "annual_precpitation", "slope", "distwater_GT_utm", "housing2001_GT_utm")
+
+selected_data <- data_c_covs[, selected_covs_r1]
+names(selected_data) <- c("Land surface temp (night)", "Temperature seasonality", "Temperature coldest month (min)", "Soil moisture", "Annual precipitation", "Slope", "Distance to river", "Improved housing prevalence")
+corr <- cor(selected_data)
+p.mat <- cor_pmat(selected_data)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-43-1.png)<!-- -->
+
+# Model fitting and selection using INLA
+
+We will be calculating different model fit metrics to assess the best
+model. + DIC + WAIC
+
+### Loading the data
+
+``` r
+prev_cols <- c("LONG", "LAT", "Examined", "Positive", "Prevalence")
+
+data <- data_c_covs2[, c(prev_cols, selected_covs_r1)]
+data <- data %>% mutate(X = NULL, N = Examined, CASES = Positive)
+
+data$CASES <- round(data$CASES)
+data$N <- round(data$N)
+```
+
+``` r
+# m <- readRDS("data/bbox_buffer_transition_ghana.rds") 
+m <- bbox_transition %>% as_Spatial()
+
+covariates <- stack("data/220228_cov_prev.grd")
+
+varlist <- c("LST_night_01", "temperature_seasonality", "minimum_temperature_coldest_month", 
+             "SM0001_GT_utm", "annual_precpitation", "slope", "distwater_GT_utm", "housing2001_GT_utm")
+
+pred_data <- covariates[[varlist]]
+pred_data <- aggregate(covariates[[varlist]], fact = 2, fun = mean, na.rm = TRUE)  # 2km grid for prediction
+
+ra <- pred_data
+dp <- data.frame(rasterToPoints(ra))
+```
+
+``` r
+coords <-  cbind(data$LONG, data$LAT)
+bdry <- inla.sp2segment(m)
+bdry$loc <- inla.mesh.map(bdry$loc)
+
+mesh5 <- inla.mesh.2d(
+  loc = coords, boundary = bdry, 
+  max.edge = c(15000, 100000),
+  cutoff = 7500
+)
+mesh5$n
+```
+
+    ## [1] 586
+
+``` r
+mesh5_plot <- autoplot(mesh5) + theme_void() + theme(legend.position = "none")
+```
+
+### SPDE and A matrix
+
+``` r
+A <- inla.spde.make.A(mesh = mesh5, loc = as.matrix(coords)); dim(A)
+```
+
+    ## [1]  46 586
+
+``` r
+spde <- inla.spde2.matern(mesh5, alpha=2)
+
+indexs <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+length(indexs)
+```
+
+    ## [1] 3
+
+### INLA stack
+
+``` r
+df <- data.frame(Intercept = 1, subset(data, select = varlist))
+
+stk <- inla.stack(
+    tag = "est",
+    data = list(y = data$CASES, numtrials = data$N),
+    A = list(1, A),
+    effects = list(df, spatial.field = indexs)
+  )
+```
+
+### Model fitting
+
+``` r
+formula01 <-y ~ -1 + Intercept 
+formula0 <-y ~ -1 + Intercept + f(spatial.field, model=spde)
+# + Soil_moisture + Flow_accumulation + near_river_DIVA + night_lights + mean_housing_2000_15 + Population_density + annual_diurnal_range + annual_precp + f(spatial.field, model=spde) 
+```
+
+#### Binomial
+
+``` r
+tic()
+inla.setOption(num.threads = 12)
+model01.binom <- inla(formula01,
+            family = "binomial", Ntrials = numtrials,
+            data = inla.stack.data(stk, spde = spde),
+            control.family = list(link = "logit"),
+            control.compute = list(dic = TRUE, waic = TRUE,
+                                   cpo = TRUE, config = TRUE,
+                                   openmp.strategy="huge"),
+            control.predictor = list(
+              compute = TRUE, link = 1,
+              A = inla.stack.A(stk)
+            )
+  )
+toc()
+```
+
+    ## 2.59 sec elapsed
+
+``` r
+tic()
+inla.setOption(num.threads = 12)
+model.binom <- inla(formula0,
+            family = "binomial", Ntrials = numtrials,
+            data = inla.stack.data(stk, spde = spde),
+            control.family = list(link = "logit"),
+            control.compute = list(dic = TRUE, waic = TRUE,
+                                   cpo = TRUE, config = TRUE,
+                                   openmp.strategy="huge"),
+            control.predictor = list(
+              compute = TRUE, link = 1,
+              A = inla.stack.A(stk)
+            )
+  )
+toc()
+```
+
+    ## 8.36 sec elapsed
+
+``` r
+model_stats <- tibble(Models = c("Binomial without spatial","Binomial"),
+       DIC = c(model01.binom$dic$dic, model.binom$dic$dic),
+       WAIC = c(model01.binom$waic$waic, model.binom$waic$waic)) 
+model_stats # going for a spatial model
+```
+
+    ## # A tibble: 2 x 3
+    ##   Models                     DIC  WAIC
+    ##   <chr>                    <dbl> <dbl>
+    ## 1 Binomial without spatial 1906. 1999.
+    ## 2 Binomial                  353.  365.
+
+## Testing Meshes
+
+### Fine tuning mesh
+
+``` r
+### mesh A
+meshA <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(10000, 100000),
+  cutoff = 3000
+)
+meshA$n
+```
+
+    ## [1] 1126
+
+``` r
+meshA_plot <- autoplot(meshA) + theme_void() + theme(legend.position = "none")
+
+### mesh B
+meshB <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(15000, 100000),
+  cutoff = 5000
+)
+meshB$n
+```
+
+    ## [1] 594
+
+``` r
+meshB_plot <- autoplot(meshB) + theme_void() + theme(legend.position = "none")
+
+### mesh C
+meshC <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(10000, 50000),
+  cutoff = 6000
+)
+
+meshC$n
+```
+
+    ## [1] 843
+
+``` r
+meshC_plot <- autoplot(meshC) + theme_void() + theme(legend.position = "none")
+
+### mesh D
+meshD <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(15000, 50000),
+  cutoff = 7500
+)
+meshD$n
+```
+
+    ## [1] 586
+
+``` r
+meshD_plot <- autoplot(meshD) + theme_void() + theme(legend.position = "none")
+
+### mesh E
+meshE <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(5000, 100000),
+  cutoff = 3000
+)
+meshE$n
+```
+
+    ## [1] 3058
+
+``` r
+meshE_plot <- autoplot(meshE) + theme_void() + theme(legend.position = "none")
+
+### mesh F
+meshF <- inla.mesh.2d(
+  loc = coords, boundary = bdry, max.edge = c(7500, 150000),
+  cutoff = 6000
+)
+meshF$n
+```
+
+    ## [1] 842
+
+``` r
+meshF_plot <- autoplot(meshF) + theme_void() + theme(legend.position = "none")
+
+meshes <- plot_grid(meshA_plot, meshB_plot, meshC_plot, meshD_plot, meshE_plot, meshF_plot, labels = "AUTO")
+
+meshes
+```
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-52-1.png)<!-- -->
+
+##### Running model on different meshes
+
+``` r
+# custom function for stacking the data
+stack_data <- function(data, dp, cov_list){
+  # stack for estimation stk.e
+  df <- data.frame(b0 = 1, subset(data, select = cov_list))
+  stk.e <- inla.stack(
+    tag = "est",
+    data = list(y = data$CASES, numtrials = data$N),
+    A = list(1, A),
+    effects = list(df, spatial.field = indexs)
+  )
+  
+  # stack for prediction stk.p
+  df_p <- data.frame(b0 = 1, subset(dp, select = cov_list))
+  stk.p <- inla.stack(
+    tag = "pred",
+    data = list(y = NA, numtrials = NA),
+    A = list(1, Ap),
+    effects = list(df_p, spatial.field = indexs))
+  
+  # stk.full has stk.e and stk.p
+  stk.full <- inla.stack(stk.e, stk.p)
+  
+  return(stk.full)
+}
+```
+
+``` r
+df_1 <- data.frame(Meshes = LETTERS[1:6],
+                   DIC = NA,
+                   WAIC = NA,
+                   time_taken = NA,
+                   number_p = NA,
+                   mean_sd = NA)
+pred_res <- list()
+
+meshes <- list(meshA, meshB, meshC, meshD, meshE, meshF)
+ra <- aggregate(covariates[[varlist]], fact = 25, fun = mean, na.rm = TRUE)  # 2km grid for prediction
+dp <- data.frame(rasterToPoints(ra))
+coop <- cbind(dp$x, dp$y)
+
+predterms <- as.formula(paste("y ~ 0 + b0 +", paste(varlist, collapse =  "+"), "+ f(spatial.field, model = spde)"))
+
+# predterm <- as.formula("y ~ 0 + b0 + f(spatial.field, model = spde)")
+pb = txtProgressBar(min = 0, max = length(meshes), initial = 0) 
+
+for (i in 1:length(meshes)) {
+  spde <- inla.spde2.matern(meshes[[i]], alpha=2)
+  indexs <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+  A <- inla.spde.make.A(mesh = meshes[[i]], loc = as.matrix(coords)); dim(A)
+  Ap <- inla.spde.make.A(mesh = meshes[[i]], loc = coop);dim(Ap)
+  datastack <- stack_data(data = data, dp = dp, cov_list = varlist)
+  inla.setOption(num.threads = 12)
+  old <- Sys.time()
+  p.res <- inla(predterms,
+            family = "binomial", Ntrials = numtrials,
+            data = inla.stack.data(datastack, spde = spde),
+            control.family = list(link = "logit"),
+            control.compute = list(dic = TRUE, waic = TRUE,
+                                   cpo = TRUE, config = TRUE,
+                                   openmp.strategy="huge"),
+            control.predictor = list(
+              compute = TRUE, link = 1,
+              A = inla.stack.A(datastack)
+            )
+)
+  df_1[i, 4] <- Sys.time() - old
+  df_1[i, 2] <- p.res$dic$dic
+  df_1[i, 3] <- p.res$waic$waic
+  df_1[i, 5] <- meshes[[i]]$n
+  
+  index <- inla.stack.index(stack = datastack, tag = "pred")$data
+  prev_mean <- p.res$summary.fitted.values[index, "mean"]
+  prev_sd <-  p.res$summary.fitted.values[index, "sd"]
+  pred_res[[i]] <- list(prev_mean, prev_sd)
+  df_1[i, 6] <- mean(prev_sd)
+  setTxtProgressBar(pb,i)
+  cat("\nIteration = ", i, "\n")
+  print(Sys.time() - old)
+}
+
+df_1
+
+# df_1 %>% write.csv("data/221020_model_meshes_updated.csv")
+```
+
+``` r
+df_1 <- read.csv("data/221020_model_meshes_updated.csv")
+df_1
+```
+
+    ##   X Meshes      DIC     WAIC time_taken number_p   mean_sd
+    ## 1 1      A 328.5898 325.5058  19.515954     1126 0.3411657
+    ## 2 2      B 342.1120 344.7677  21.800993      594 0.3546169
+    ## 3 3      C 346.5946 355.7183  27.977950      843 0.3786170
+    ## 4 4      D 330.2956 326.0149  38.948466      586 0.3549100
+    ## 5 5      E 342.1255 349.3378   1.307725     3058 0.2765611
+    ## 6 6      F 343.4023 346.8262  18.364361      842 0.3557615
+
+#INLA Model with prediction
+
+``` r
+spde <- inla.spde2.matern(meshA, alpha=2)
+indexs <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+length(indexs)
+```
+
+    ## [1] 3
+
+``` r
+# Make projection matrix --------------------------------------------------
+A <- inla.spde.make.A(mesh=meshA,loc=as.matrix(coords));dim(A)
+```
+
+    ## [1]   46 1126
+
+``` r
+coop <- cbind(dp$x, dp$y)
+Ap <- inla.spde.make.A(mesh = meshA, loc = coop);dim(Ap)
+```
+
+    ## [1] 11360  1126
+
+``` r
+# Model formula ---------------------------------------------------------
+predterms <- as.formula(paste("y ~ 0 + b0 +", paste(varlist, collapse =  "+"), "+ f(spatial.field, model = spde)"))
+
+datastack <- stack_data(data = data, dp = dp, cov_list = varlist)
+```
+
+``` r
+tic()
+res <- inla(predterms,
+            family = "binomial", Ntrials = numtrials,
+            data = inla.stack.data(datastack, spde = spde),
+            control.family = list(link = "logit"),
+            control.compute = list(dic = TRUE, waic = TRUE,
+                                   cpo = TRUE, config = TRUE,
+                                   openmp.strategy="huge"),
+            control.predictor = list(
+              compute = TRUE, link = 1,
+              A = inla.stack.A(datastack)
+            )
+)
+toc()
+```
+
+``` r
+res <- readRDS("data/220301_GT_prev_mesh5_2km.rds")
+summary(res)
+```
+
+    ## 
+    ## Call:
+    ##    c("inla(formula = predterms, family = \"binomial\", data = 
+    ##    inla.stack.data(datastack, ", " spde = spde), Ntrials = numtrials, 
+    ##    control.compute = list(dic = TRUE, ", " waic = TRUE, cpo = TRUE, config 
+    ##    = TRUE, openmp.strategy = \"huge\"), ", " control.predictor = 
+    ##    list(compute = TRUE, link = 1, A = inla.stack.A(datastack)), ", " 
+    ##    control.family = list(link = \"logit\"))") 
+    ## Time used:
+    ##     Pre = 0.896, Running = 148, Post = 2.33, Total = 151 
+    ## Fixed effects:
+    ##                                     mean     sd 0.025quant 0.5quant 0.975quant
+    ## b0                                18.770 27.957    -36.469   18.884     73.334
+    ## LST_night_01                      -0.777  0.818     -2.428   -0.766      0.807
+    ## temperature_seasonality           -0.022  0.011     -0.044   -0.022     -0.001
+    ## minimum_temperature_coldest_month  0.249  0.141     -0.021    0.246      0.535
+    ## SM0001_GT_utm                      0.043  0.020      0.004    0.043      0.084
+    ## annual_precpitation               -0.024  0.015     -0.053   -0.024      0.005
+    ## slope                              2.126  1.091      0.032    2.106      4.338
+    ## distwater_GT_utm                   0.174  0.265     -0.348    0.173      0.701
+    ## housing2001_GT_utm                14.300 23.186    -31.576   14.397     59.597
+    ##                                     mode kld
+    ## b0                                19.119   0
+    ## LST_night_01                      -0.744   0
+    ## temperature_seasonality           -0.022   0
+    ## minimum_temperature_coldest_month  0.241   0
+    ## SM0001_GT_utm                      0.043   0
+    ## annual_precpitation               -0.024   0
+    ## slope                              2.067   0
+    ## distwater_GT_utm                   0.171   0
+    ## housing2001_GT_utm                14.594   0
+    ## 
+    ## Random effects:
+    ##   Name     Model
+    ##     spatial.field SPDE2 model
+    ## 
+    ## Model hyperparameters:
+    ##                           mean    sd 0.025quant 0.5quant 0.975quant  mode
+    ## Theta1 for spatial.field  4.38 0.658       2.91     4.45       5.46  4.74
+    ## Theta2 for spatial.field -7.27 0.406      -7.95    -7.32      -6.37 -7.50
+    ## 
+    ## Expected number of effective parameters(stdev): 45.06(0.167)
+    ## Number of equivalent replicates : 1.02 
+    ## 
+    ## Deviance Information Criterion (DIC) ...............: 329.76
+    ## Deviance Information Criterion (DIC, saturated) ....: 103.96
+    ## Effective number of parameters .....................: 45.87
+    ## 
+    ## Watanabe-Akaike information criterion (WAIC) ...: 331.99
+    ## Effective number of parameters .................: 33.62
+    ## 
+    ## Marginal log-Likelihood:  -313.31 
+    ## CPO and PIT are computed
+    ## 
+    ## Posterior marginals for the linear predictor and
+    ##  the fitted values are computed
+
+``` r
+reg_coff <- res$summary.fixed %>% arrange(desc(mean))
+reg_coff 
+```
+
+    ##                                          mean          sd    0.025quant
+    ## b0                                18.76955032 27.95680237 -36.468615534
+    ## housing2001_GT_utm                14.29994011 23.18618965 -31.575822530
+    ## slope                              2.12611604  1.09066474   0.032291122
+    ## minimum_temperature_coldest_month  0.24876939  0.14110655  -0.021472226
+    ## distwater_GT_utm                   0.17400666  0.26545221  -0.348083062
+    ## SM0001_GT_utm                      0.04334205  0.02038542   0.003723872
+    ## temperature_seasonality           -0.02229837  0.01085034  -0.043684861
+    ## annual_precpitation               -0.02409362  0.01488807  -0.053462258
+    ## LST_night_01                      -0.77736032  0.81776595  -2.428385802
+    ##                                      0.5quant   0.975quant        mode
+    ## b0                                18.88369957 73.334041783 19.11923981
+    ## housing2001_GT_utm                14.39665194 59.597181670 14.59387302
+    ## slope                              2.10595901  4.337865376  2.06682158
+    ## minimum_temperature_coldest_month  0.24608913  0.534680041  0.24088754
+    ## distwater_GT_utm                   0.17304155  0.700624336  0.17108628
+    ## SM0001_GT_utm                      0.04311030  0.084292814  0.04267389
+    ## temperature_seasonality           -0.02231536 -0.000846236 -0.02234223
+    ## annual_precpitation               -0.02409861  0.005252699 -0.02411539
+    ## LST_night_01                      -0.76560354  0.806966144 -0.74359500
+    ##                                            kld
+    ## b0                                1.444530e-06
+    ## housing2001_GT_utm                6.163469e-08
+    ## slope                             5.725461e-06
+    ## minimum_temperature_coldest_month 2.873856e-06
+    ## distwater_GT_utm                  2.477319e-06
+    ## SM0001_GT_utm                     1.766908e-06
+    ## temperature_seasonality           1.710653e-06
+    ## annual_precpitation               5.941239e-07
+    ## LST_night_01                      1.616598e-06
+
+``` r
+res$summary.hyperpar %>% data.frame() # %>% write.csv("docs/hyper_par_theta.csv")
+```
+
+    ##                               mean        sd X0.025quant X0.5quant X0.975quant
+    ## Theta1 for spatial.field  4.374668 0.6584075    2.906070  4.452615    5.460675
+    ## Theta2 for spatial.field -7.273391 0.4063809   -7.944656 -7.320616   -6.366521
+    ##                               mode
+    ## Theta1 for spatial.field  4.738928
+    ## Theta2 for spatial.field -7.497440
+
+``` r
+exp(res$summary.fixed)
+```
+
+    ##                                           mean           sd   0.025quant
+    ## b0                                1.417464e+08 1.385112e+12 1.451715e-16
+    ## LST_night_01                      4.596177e-01 2.265433e+00 8.817906e-02
+    ## temperature_seasonality           9.779484e-01 1.010909e+00 9.572556e-01
+    ## minimum_temperature_coldest_month 1.282446e+00 1.151547e+00 9.787567e-01
+    ## SM0001_GT_utm                     1.044295e+00 1.020595e+00 1.003731e+00
+    ## annual_precpitation               9.761943e-01 1.014999e+00 9.479417e-01
+    ## slope                             8.382247e+00 2.976252e+00 1.032818e+00
+    ## distwater_GT_utm                  1.190063e+00 1.304021e+00 7.060402e-01
+    ## housing2001_GT_utm                1.623249e+06 1.173908e+10 1.935506e-14
+    ##                                       0.5quant   0.975quant         mode
+    ## b0                                1.588863e+08 7.056181e+31 2.010853e+08
+    ## LST_night_01                      4.650532e-01 2.241098e+00 4.754018e-01
+    ## temperature_seasonality           9.779318e-01 9.991541e-01 9.779055e-01
+    ## minimum_temperature_coldest_month 1.279014e+00 1.706902e+00 1.272378e+00
+    ## SM0001_GT_utm                     1.044053e+00 1.087947e+00 1.043598e+00
+    ## annual_precpitation               9.761894e-01 1.005267e+00 9.761731e-01
+    ## slope                             8.214977e+00 7.654397e+01 7.899675e+00
+    ## distwater_GT_utm                  1.188915e+00 2.015010e+00 1.186593e+00
+    ## housing2001_GT_utm                1.788078e+06 7.633560e+25 2.177903e+06
+    ##                                        kld
+    ## b0                                1.000001
+    ## LST_night_01                      1.000002
+    ## temperature_seasonality           1.000002
+    ## minimum_temperature_coldest_month 1.000003
+    ## SM0001_GT_utm                     1.000002
+    ## annual_precpitation               1.000001
+    ## slope                             1.000006
+    ## distwater_GT_utm                  1.000002
+    ## housing2001_GT_utm                1.000000
+
+``` r
+# Mapping prediction ------------------------------------------------------
+index <- inla.stack.index(stack = datastack, tag = "pred")$data
+
+prev_mean <- res$summary.fitted.values[index, "mean"]
+prev_ll <- res$summary.fitted.values[index, "0.025quant"]
+prev_ul <- res$summary.fitted.values[index, "0.975quant"]
+prev_sd <-  res$summary.fitted.values[index, "sd"]
+prev_med <- res$summary.fitted.values[index, "0.5quant"]
+
+summary(res$summary.fitted.values[index,])
+```
+
+    ##       mean               sd              0.025quant           0.5quant        
+    ##  Min.   :0.02354   Min.   :0.0000487   Min.   :0.0000000   Min.   :0.0008634  
+    ##  1st Qu.:0.31085   1st Qu.:0.3185130   1st Qu.:0.0002986   1st Qu.:0.1541676  
+    ##  Median :0.43980   Median :0.3512410   Median :0.0012348   Median :0.3710468  
+    ##  Mean   :0.44001   Mean   :0.3358121   Mean   :0.0105652   Mean   :0.4063882  
+    ##  3rd Qu.:0.56408   3rd Qu.:0.3699345   3rd Qu.:0.0044624   3rd Qu.:0.6402152  
+    ##  Max.   :0.99997   Max.   :0.4297433   Max.   :0.9998679   Max.   :0.9999909  
+    ##                                                                               
+    ##    0.975quant           mode        
+    ##  Min.   :0.05295   Min.   :0.00000  
+    ##  1st Qu.:0.98582   1st Qu.:0.00000  
+    ##  Median :0.99700   Median :0.00001  
+    ##  Mean   :0.97511   Mean   :0.39290  
+    ##  3rd Qu.:0.99923   3rd Qu.:1.00000  
+    ##  Max.   :1.00000   Max.   :1.50000  
+    ##                    NA's   :72
+
+``` r
+r <- pred_data[[1]]
+
+### Custom function for generating the raster from the output
+reproj <- function(tbc, c){
+  tbc <- projectRaster(tbc, c)
+  tbc <- resample(tbc, c)
+  tbc <- mask(tbc, c)
+}
+raster_prev <- function(prev_mean){
+  r_prev_mean <- rasterize(
+    x = coop, y = ra, field = prev_mean,
+    fun = mean)
+  r_prev_mean <- reproj(r_prev_mean,r)
+}
+
+r_prev_mean <- raster_prev(prev_mean = prev_mean)
+```
+
+    ## Warning in projectRaster(tbc, c): input and ouput crs are the same
+
+``` r
+r_prev_ul <- raster_prev(prev_ul)
+```
+
+    ## Warning in projectRaster(tbc, c): input and ouput crs are the same
+
+``` r
+r_prev_ll <- raster_prev(prev_ll)
+```
+
+    ## Warning in projectRaster(tbc, c): input and ouput crs are the same
+
+``` r
+r_pred_error <- (r_prev_ul - r_prev_ll)/2
+r_prev_sd <- raster_prev(prev_sd)
+```
+
+    ## Warning in projectRaster(tbc, c): input and ouput crs are the same
+
+``` r
+r_prev_med <- raster_prev(prev_med)
+```
+
+    ## Warning in projectRaster(tbc, c): input and ouput crs are the same
+
+``` r
+# Using ggplot2 -----------------------------------------------------------
+library(RColorBrewer)
+library(ggspatial)
+
+ggplot_raster <- function(rast = rast, rast_name = "Name of raster"){
+  rdf <- rasterToPoints(rast); rdf <- data.frame(rdf)
+  colnames(rdf) <- c("X","Y","values")
+  p1 <- ggplot() + 
+    geom_raster(data = rdf, aes(X, Y, fill = values)) + 
+    scale_fill_gradientn(name=rast_name, colours = pal_res(100))+
+    guides(fill = guide_colorbar()) +
+    scale_alpha(range = c(0, 0.5), guide = "none") +
+    coord_equal() + 
+    theme_void(base_family = "Arial", base_size = 16) +
+    scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+    scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0)) +  annotation_scale(location = "br", width_hint = 0.5)  +
+    # annotation_north_arrow(location = "tl", which_north = "true",
+    #                        pad_x = unit(0, "cm"), pad_y = unit(0.2, "cm"),
+    #                        style = north_arrow_fancy_orienteering) +
+    theme(legend.position = "bottom", legend.key.size = unit(2, 'cm'), #change legend key size
+          legend.key.height = unit(.5, 'cm'), #change legend key height
+          legend.key.width = unit(1.5, 'cm')) +
+    guides(fill = guide_colourbar(title.position="top", title.hjust = 0.5))
+  return(p1)
+}
+
+# Plot mean prev
+pal_res <- colorRampPalette(rev(brewer.pal(8, name = "RdYlBu")), interpolate = "linear", space = "Lab")
+mean_prev <- ggplot_raster(rast = r_prev_mean, rast_name = "Mean posterior prevalence")
+
+mean_prev
+```
+
+    ## Warning: Removed 389 rows containing missing values (geom_raster).
+
+    ## Using plotunit = 'm'
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-62-1.png)<!-- -->
+
+``` r
+# Plot mean sd
+pal_res <- colorRampPalette(brewer.pal(8, name = "Blues"), interpolate = "linear", space = "Lab")
+sd_prev <- ggplot_raster(rast = r_prev_sd, rast_name = "Uncertainty (SD posterior prevalence)")
+
+sd_prev
+```
+
+    ## Warning: Removed 389 rows containing missing values (geom_raster).
+
+    ## Using plotunit = 'm'
+
+![](1_prevalence_mapping_files/figure-gfm/unnamed-chunk-62-2.png)<!-- -->

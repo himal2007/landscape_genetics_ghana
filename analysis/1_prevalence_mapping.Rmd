@@ -4,7 +4,7 @@ author: "Himal Shrestha"
 date: "23/02/2022"
 output: 
   md_document:
-    variant: markdown_github
+    variant: gfm
     toc: yes
     toc_depth: 4
 ---
@@ -21,18 +21,13 @@ The data is obtained from [ESPEN database](https://espen.afro.who.int/tools-reso
 extrafont::loadfonts(device="win", quiet = T)
 ```
 
-```{r, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
 suppressMessages({
   library(sf);
   library(tidyverse);
-  # library(ggplot2);
   library(rgdal);
-  # library(leaflet);
   library(raster);
   library(RColorBrewer);
-  # library(tmap);
-  # library(gstat);
-  # library(tidyr);
   library(rgeos);
   library(ggspatial);
   library(INLA);
@@ -40,12 +35,15 @@ suppressMessages({
   library(tictoc);
   library(sp);
   library(cowplot);
+  library(ggcorrplot);
+  library(FactoMineR)
+  library(factoextra)
   })
 ```
 
 ## Loading the data
 
-```{r}
+```{r, warning=FALSE}
 ghana_prev_site <- read.csv("data/data-GH-Oncho-sitelevel.csv", header = T)
 
 ghana_prev_clean <- ghana_prev_site %>% filter(Georeliability == 1)
@@ -113,10 +111,10 @@ find_duplicate <- function(df){
   return(duplicate_sites)
 }
 
-(duplicate_mf <- find_duplicate(df = GT_prev_mapping))
+duplicate_mf <- find_duplicate(df = GT_prev_mapping)
 ```
 
-```{r}
+```{r, message=FALSE}
 GT_prev_mapdiff <- GT_prev_mapping[ !(GT_prev_mapping$LONG %in% duplicate_mf$LONG), ]
 GT_prev_mapdiff %>% summary ## all collected before 2001
  
@@ -186,7 +184,6 @@ covs <- raster::extract(cov_prev, GT_unique_prevmap[c("LONG","LAT")], na.rm = TR
 
 data_c_covs <- as.data.frame(cbind(GT_unique_prevmap, covs))
 data_c_covs <- na.omit(data_c_covs)
-data_c_covs %>% head()
 ```
 
 
@@ -220,9 +217,6 @@ names(covs_prev) <- c("BIO1", "BIO2", paste0("BIO",4:11), "BIO3", paste0("BIO",c
 ### PCA analysis
 
 ```{r}
-library(FactoMineR)
-library(factoextra)
-
 res.pca <- PCA(covs_prev, scale.unit = TRUE, graph = FALSE)
 p_pca <- fviz_pca_var(res.pca, col.var = "black") + ggtitle("")
 p_pca
@@ -290,10 +284,7 @@ p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
    lab = TRUE, digits = 2, insig = "blank")
 p
 ```
-```{r}
-tree = hclustvar(X.quanti = precip_data[, 1:8])
-plot(tree)
-```
+
 + "precipitation_coldest_quarter", "annual_precpitation", "precipitation_warmest_quarter"
 
 ```{r}
@@ -467,8 +458,8 @@ mesh5_plot <- autoplot(mesh5) + theme_void() + theme(legend.position = "none")
 A <- inla.spde.make.A(mesh = mesh5, loc = as.matrix(coords)); dim(A)
 spde <- inla.spde2.matern(mesh5, alpha=2)
 
-iset <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
-length(iset)
+indexs <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+length(indexs)
 ```
 
 ### INLA stack
@@ -479,7 +470,7 @@ stk <- inla.stack(
     tag = "est",
     data = list(y = data$CASES, numtrials = data$N),
     A = list(1, A),
-    effects = list(df, spatial.field = iset)
+    effects = list(df, spatial.field = indexs)
   )
 ```
 
@@ -553,8 +544,9 @@ meshB_plot <- autoplot(meshB) + theme_void() + theme(legend.position = "none")
 ### mesh C
 meshC <- inla.mesh.2d(
   loc = coords, boundary = bdry, max.edge = c(10000, 50000),
-  cutoff = 5000
+  cutoff = 6000
 )
+
 meshC$n
 meshC_plot <- autoplot(meshC) + theme_void() + theme(legend.position = "none")
 
@@ -585,8 +577,6 @@ meshF_plot <- autoplot(meshF) + theme_void() + theme(legend.position = "none")
 meshes <- plot_grid(meshA_plot, meshB_plot, meshC_plot, meshD_plot, meshE_plot, meshF_plot, labels = "AUTO")
 
 meshes
-
-ggsave(plot = meshes, filename = "figs/triangulation_meshes.png", device = "png", dpi = 500, width = 10, height = 5, units = "in", bg = "white" )
 ```
 
 ##### Running model on different meshes
@@ -617,7 +607,7 @@ stack_data <- function(data, dp, cov_list){
 }
 ```
 
-```{r}
+```{r, eval=FALSE}
 df_1 <- data.frame(Meshes = LETTERS[1:6],
                    DIC = NA,
                    WAIC = NA,
@@ -633,6 +623,7 @@ coop <- cbind(dp$x, dp$y)
 
 predterms <- as.formula(paste("y ~ 0 + b0 +", paste(varlist, collapse =  "+"), "+ f(spatial.field, model = spde)"))
 
+# predterm <- as.formula("y ~ 0 + b0 + f(spatial.field, model = spde)")
 pb = txtProgressBar(min = 0, max = length(meshes), initial = 0) 
 
 for (i in 1:length(meshes)) {
@@ -672,164 +663,135 @@ for (i in 1:length(meshes)) {
 
 df_1
 
-# df_1 %>% write.csv("data/220310_model_meshes.csv")
+# df_1 %>% write.csv("data/221020_model_meshes_updated.csv")
+```
+```{r}
+df_1 <- read.csv("data/221020_model_meshes_updated.csv")
+df_1
+```
+
+
+#INLA Model with prediction
+
+```{r}
+spde <- inla.spde2.matern(meshA, alpha=2)
+indexs <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+length(indexs)
+```
+
+
+```{r}
+# Make projection matrix --------------------------------------------------
+A <- inla.spde.make.A(mesh=meshA,loc=as.matrix(coords));dim(A)
+coop <- cbind(dp$x, dp$y)
+Ap <- inla.spde.make.A(mesh = meshA, loc = coop);dim(Ap)
 ```
 
 ```{r}
-df_2 <- data.frame(Meshes = LETTERS[1:6],
-                   mean_sd = NA,
-                   range_sd = )
+# Model formula ---------------------------------------------------------
+predterms <- as.formula(paste("y ~ 0 + b0 +", paste(varlist, collapse =  "+"), "+ f(spatial.field, model = spde)"))
+
+datastack <- stack_data(data = data, dp = dp, cov_list = varlist)
 ```
 
-
-
-+ custom function for stacking the data
-```{r}
-stack_data <- function(data, dp, cov_list){
-  # stack for estimation stk.e
-  df <- data.frame(Intercept = 1, subset(data, select = cov_list))
-  stk.e <- inla.stack(
-    tag = "est",
-    data = list(y = data$CASES, numtrials = data$N),
-    A = list(1, Ae),
-    effects = list(df, spatial.field = iset)
-  )
-  
-  # stack for prediction stk.p
-  df_p <- data.frame(Intercept = 1, subset(dp, select = cov_list))
-  stk.p <- inla.stack(
-    tag = "pred",
-    data = list(y = dp$CASES, numtrials = dp$N),
-    A = list(1, Ap),
-    effects = list(df_p, spatial.field = iset))
-  
-  # stk.full has stk.e and stk.p
-  stk.full <- inla.stack(stk.e, stk.p)
-  
-  return(stk.full)
-}
-```
-+ running the model on the data and predicting the same data
-```{r}
-train <- data; test <- data
-test_coords <- train_coords <- coords
-
-# A <- inla.spde.make.A(mesh=mesh5,loc=as.matrix(train_coords));dim(A)
-
-Ae <- inla.spde.make.A(mesh=mesh5,loc=as.matrix(train_coords));dim(Ae)
-Ap <- inla.spde.make.A(mesh = mesh5, loc = test_coords);dim(Ap)
-stk.full <- stack_data(data = train, dp = test, cov_list = varlist)
-
-
-inla.setOption(num.threads = 12)
+```{r, eval = F}
 tic()
-p.res <- inla(predterms,
+res <- inla(predterms,
             family = "binomial", Ntrials = numtrials,
-            data = inla.stack.data(stk.full, spde = spde),
+            data = inla.stack.data(datastack, spde = spde),
             control.family = list(link = "logit"),
             control.compute = list(dic = TRUE, waic = TRUE,
                                    cpo = TRUE, config = TRUE,
                                    openmp.strategy="huge"),
             control.predictor = list(
               compute = TRUE, link = 1,
-              A = inla.stack.A(stk.full)
+              A = inla.stack.A(datastack)
             )
-  )
+)
 toc()
-
-index.pred <- inla.stack.index(stk.full, "pred")$data
-obs_prev <- train$Prevalence #this is the number pos/number examined
-pred_mean <- p.res$summary.fitted.values[index.pred, "mean"]
-# pred_mean <- pred_mean * 100
-pred_sd = p.res$summary.fitted.values[index.pred,"sd"]
-validation = list()
-validation$res = obs_prev - pred_mean 
-validation$rmse = sqrt(mean(validation$res^2, na.rm=TRUE)) 
-validation$cor = cor(obs_prev, pred_mean, 
-                       use="pairwise.complete.obs",
-                       method="spearman")
-
-Efxplot(p.res, ModelNames = "Model 2")
 ```
-
-### K-fold cross validation
-
-+ Output RMSE and correlation ceofficient
-+ Output validation data with observed and predicted values
-+ Not much data so might not be suitable
-
 ```{r}
-varlist <- c("LST_night_01", "temperature_seasonality", "minimum_temperature_coldest_month", 
-             "SM0001_GT_utm", "annual_precpitation", "slope", "distwater_GT_utm", "housing2001_GT_utm")
+res <- readRDS("data/220301_GT_prev_mesh5_2km.rds")
+summary(res)
+reg_coff <- res$summary.fixed %>% arrange(desc(mean))
+reg_coff 
+
+res$summary.hyperpar %>% data.frame() # %>% write.csv("docs/hyper_par_theta.csv")
+exp(res$summary.fixed)
 ```
 
 ```{r}
-library(dismo)
-fold <- 10 # specify fold
-model <- 1 # specify model
-variables = 2
-pb = txtProgressBar(min = 0, max = fold, initial = 0) 
-output <- matrix(ncol=variables, nrow=fold)
-colnames(output) <- c("RMSE", "Correlation-coefficient")
-output <- data.frame(output)
+# Mapping prediction ------------------------------------------------------
+index <- inla.stack.index(stack = datastack, tag = "pred")$data
 
-set.seed(12345)
-kf <- kfold(nrow(data), k = fold)
+prev_mean <- res$summary.fitted.values[index, "mean"]
+prev_ll <- res$summary.fitted.values[index, "0.025quant"]
+prev_ul <- res$summary.fitted.values[index, "0.975quant"]
+prev_sd <-  res$summary.fitted.values[index, "sd"]
+prev_med <- res$summary.fitted.values[index, "0.5quant"]
 
-predterms <- as.formula(paste("y ~ 0 + Intercept +", paste(varlist, collapse =  "+"), "+ f(spatial.field, model = spde)"))
+summary(res$summary.fitted.values[index,])
 
-old <- Sys.time()
-for(i in 1:fold) {
-  test <- data[kf == i, ]
-  train <- data[kf != i, ]
-  test$CASES <- NA  #make the y values for test NA
-  test_coords <- coords[kf == i,]
-  train_coords <- coords[kf != i,]
-  Ae <- inla.spde.make.A(mesh=mesh5,loc=as.matrix(train_coords));dim(Ae)
-  Ap <- inla.spde.make.A(mesh = mesh5, loc = test_coords);dim(Ap)
-  stk.full <- stack_data(data = train, dp = test, cov_list = varlist)
-  inla.setOption(num.threads = 8)
-  p.res <- inla(predterms,
-            family = "binomial", Ntrials = numtrials,
-            data = inla.stack.data(stk.full, spde = spde),
-            control.family = list(link = "logit"),
-            control.compute = list(dic = TRUE, waic = TRUE,
-                                   cpo = TRUE, config = TRUE,
-                                   openmp.strategy="huge"),
-            control.predictor = list(
-              compute = TRUE, link = 1,
-              A = inla.stack.A(stk.full)
-            )
-  )
-  index.pred <- inla.stack.index(stk.full, "pred")$data
-  obs_prev <- test$Prevalence #this is the number pos/number examined
-  pred_mean <- p.res$summary.fitted.values[index.pred, "mean"]
-  pred_sd = p.res$summary.fitted.values[index.pred,"sd"]
-  validation = list()
-  validation$res = obs_prev - pred_mean 
-  validation$rmse = sqrt(mean(validation$res^2, na.rm=TRUE)) 
-  validation$cor = cor(obs_prev, pred_mean, 
-                       use="pairwise.complete.obs",
-                       method="spearman")
-  output[i, ] <- c(validation$rmse, validation$cor)
-  
-  if(i == 1){
-      object_cor <- data.frame(fold = i, pred_mean, obs_prev)
-    }
-    else{
-      object_cor <- bind_rows(object_cor, data.frame(fold = i, pred_mean, obs_prev))
-    }
-    setTxtProgressBar(pb,i)
-    cat("\nIteration = ", i, "\n")
-    print(Sys.time() - old)
+r <- pred_data[[1]]
+
+### Custom function for generating the raster from the output
+reproj <- function(tbc, c){
+  tbc <- projectRaster(tbc, c)
+  tbc <- resample(tbc, c)
+  tbc <- mask(tbc, c)
+}
+raster_prev <- function(prev_mean){
+  r_prev_mean <- rasterize(
+    x = coop, y = ra, field = prev_mean,
+    fun = mean)
+  r_prev_mean <- reproj(r_prev_mean,r)
 }
 
-# write.csv(output, paste0("data/validation_stats_", "model_",model, "_", "fold_", fold,".csv"))
-# write.csv(object_cor, paste0("data/obs_pred_val_","model_",model, "_", "fold_", fold,".csv"))
-
-val_stats <- data.frame(RMSE = mean(output$RMSE), Corr_coff = mean(output$Correlation.coefficient))
-# write.csv(val_stats, "docs/valid_cor.csv")
-save(output, object_cor, val_stats, file = "docs/validation_stats.RData")
-
-load("docs/validation_stats.RData")
+r_prev_mean <- raster_prev(prev_mean = prev_mean)
+r_prev_ul <- raster_prev(prev_ul)
+r_prev_ll <- raster_prev(prev_ll)
+r_pred_error <- (r_prev_ul - r_prev_ll)/2
+r_prev_sd <- raster_prev(prev_sd)
+r_prev_med <- raster_prev(prev_med)
 ```
+
+```{r}
+# Using ggplot2 -----------------------------------------------------------
+library(RColorBrewer)
+library(ggspatial)
+
+ggplot_raster <- function(rast = rast, rast_name = "Name of raster"){
+  rdf <- rasterToPoints(rast); rdf <- data.frame(rdf)
+  colnames(rdf) <- c("X","Y","values")
+  p1 <- ggplot() + 
+    geom_raster(data = rdf, aes(X, Y, fill = values)) + 
+    scale_fill_gradientn(name=rast_name, colours = pal_res(100))+
+    guides(fill = guide_colorbar()) +
+    scale_alpha(range = c(0, 0.5), guide = "none") +
+    coord_equal() + 
+    theme_void(base_family = "Arial", base_size = 16) +
+    scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+    scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0)) +  annotation_scale(location = "br", width_hint = 0.5)  +
+    # annotation_north_arrow(location = "tl", which_north = "true",
+    #                        pad_x = unit(0, "cm"), pad_y = unit(0.2, "cm"),
+    #                        style = north_arrow_fancy_orienteering) +
+    theme(legend.position = "bottom", legend.key.size = unit(2, 'cm'), #change legend key size
+          legend.key.height = unit(.5, 'cm'), #change legend key height
+          legend.key.width = unit(1.5, 'cm')) +
+    guides(fill = guide_colourbar(title.position="top", title.hjust = 0.5))
+  return(p1)
+}
+
+# Plot mean prev
+pal_res <- colorRampPalette(rev(brewer.pal(8, name = "RdYlBu")), interpolate = "linear", space = "Lab")
+mean_prev <- ggplot_raster(rast = r_prev_mean, rast_name = "Mean posterior prevalence")
+
+mean_prev
+
+# Plot mean sd
+pal_res <- colorRampPalette(brewer.pal(8, name = "Blues"), interpolate = "linear", space = "Lab")
+sd_prev <- ggplot_raster(rast = r_prev_sd, rast_name = "Uncertainty (SD posterior prevalence)")
+
+sd_prev
+```
+
