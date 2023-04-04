@@ -1,0 +1,1549 @@
+---
+title: "Population genetic analysis of the parasite and vectors"
+author: "Himal Shrestha"
+date: "23/02/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/19226876/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+```
+
+## Introduction
+
+## Load libraries
+```{r, message=FALSE}
+extrafont::loadfonts(device="win", quiet = T)
+```
+
+```{r, message=FALSE, warning=FALSE}
+suppressMessages({
+  library(vcfR);
+  library(poppr);
+  library(adegenet);
+  library(ape);
+  # library(gstudio);
+  library(tidyverse);
+  library(graph4lg);
+  library(hierfstat);
+  library(PopGenReport);
+  library(hierfstat);
+  library(sf);
+  library(rgdal);
+  library(RColorBrewer);
+  library(ggpattern);
+  library(raster);
+  })
+```
+
+
+Objectives  
+
+- filtering vcf file
+- calculate Fst matrices
+- population genetic - clustering anlaysis
+
+
+## Loading the data
+
+```{r}
+myvcf_ghana <- read.vcfR("data/parasites_ghana_TG.vcf")
+
+ghana_sample_info <- read.csv("data/ghana_sample_info_parasite.csv")
+
+ghana_sample_info_2 <- ghana_sample_info %>% dplyr::select(Community.ID, Longitude, Latitude) %>% distinct()
+```
+
+### Geographic distance matrix
+```{r}
+mat_geo <- mat_geo_dist(data = ghana_sample_info_2, ID = "Community.ID", x = "Longitude", y = "Latitude", crds_type = "polar")
+mat_geo_km <- mat_geo/1000
+```
+
+```{r}
+heatmap(mat_geo)
+```
+
+
+```{r}
+## Ghana map boundary - level 1/updated
+ghana_map_1 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_1.shp", verbose = FALSE) %>% st_as_sf()
+```
+TODO - move it down
+
+### Merge communities
+- Combine sample locations within 5km range
+	- Combine ASU, BAY and SEN
+  - Combine TAK, WIA and CHA
+
+```{r}
+ghana_genind <- vcfR2genind(myvcf_ghana, ploidy = 1)
+pop_id <- ghana_genind@tab %>% rownames %>% substr(start = 1, stop = 3) %>% data.frame()
+
+# changing merged community to 3 letter code
+pop_id <- pop_id %>% mutate(pops = as.character(.),
+                  pops = if_else(pops %in% c('ASU', 'SEN', 'BAY'), 'BAS', pops),
+                  pops = if_else(pops %in% c('TAK', 'WIA', 'CHA'), 'WTC', pops),
+                  pops = as.factor(pops))
+
+ghana_genind@pop <- pop_id$pops
+```
+
+#### Centroid
+- Add centroid for the the combined villages
+- Thanks to [this post](https://stackoverflow.com/questions/38699761/getting-the-centroids-of-lat-and-longitude-in-a-data-frame)
+```{r, warning=FALSE}
+ghana_sample_info$pop_id <- pop_id$pops
+
+library(geosphere)
+library(data.table)
+
+to_calc_centroid <- ghana_sample_info %>% filter(pop_id %in% c("BAS", "WTC")) %>% dplyr::select(pop_id, Longitude, Latitude) %>% distinct()
+
+# Convert to data.table
+setDT(to_calc_centroid)
+
+# Re-define centroid function - Lon is first argument and Lat is second
+# Geosphere takes a matrix with two columns: Lon|Lat, so we use cbind to coerce the data to this form
+findCentroid <- function(Lon, Lat, ...){
+  centroid(cbind(Lon, Lat), ...)
+}
+
+# Find centroid Lon and Lat by ID, as required
+to_calc_centroid[, c("Cent_lon", "Cent_lat") := as.list(findCentroid(Longitude, Latitude)), by = pop_id]
+
+plot(to_calc_centroid$Longitude, to_calc_centroid$Latitude)
+points(to_calc_centroid$Cent_lon, to_calc_centroid$Cent_lat, col = "red")
+
+centroid <- to_calc_centroid %>% dplyr::select(pop_id, Cent_lon, Cent_lat) %>% distinct()
+```
+
++ replace logitude and latitude with centroids
+
+```{r}
+ghana_sample_info <- ghana_sample_info %>% mutate(
+                  Longitude = if_else(pop_id == 'BAS', centroid$Cent_lon[1], Longitude),
+                  Longitude = if_else(pop_id == 'WTC', centroid$Cent_lon[2], Longitude),
+                  Latitude = if_else(pop_id == 'BAS', centroid$Cent_lat[1], Latitude),
+                  Latitude = if_else(pop_id == 'WTC', centroid$Cent_lat[2], Latitude))
+
+# sanity check
+ghana_sample_info %>%  dplyr::select(Community, pop_id, Longitude, Latitude) %>% distinct()
+centroid ## success
+```
+- add GIS coordinates to ghana_genind
+```{r}
+#sanity check
+# ghana_genind@pop == ghana_sample_info$pop_id
+
+ghana_genind@other$xy <- ghana_sample_info[,c("Longitude", "Latitude")]
+```
+
+
+### Calculate population specific statistics
+- calculate alleles per site
+```{r}
+summary_genind <- summary(ghana_genind)
+
+## Observed gene diversities
+bs_ghana<-basic.stats(ghana_genind, diploid = FALSE)
+ghana_hs <- as.data.frame(t(bs_ghana$Hs))
+ghana_hs$means <- rowMeans(ghana_hs)
+
+# Allelic richness
+al_rich <- allel.rich(ghana_genind)$mean.richness # From popgenreport
+
+```
+### Haplotype statistics
+- Thanks to
+1. https://www.researchgate.net/post/How-can-I-compute-haplotype-number-and-haplotype-diversity-from-some-given-sequences-in-R-with-the-package-pegas
+2. https://biolsystematics.wordpress.com/populationsandhaplotypenetworks/
+```{r, warning=FALSE, message=FALSE}
+library(haplotypes)
+x<-read.fas("data/Strict_AllWGS189_nosingletons_riverbasins.fa")  #uses raw fasta file
+
+h<-haplotypes::haplotype(x,indels="5th")
+
+pop <- read.csv("data/220114_seq_ID_new.csv", header = F)
+pop <- pop$V1
+
+g<-grouping(h, pop)
+sz<-apply(g$hapmat,2,function(c)sum(c!=0)) %>% data.frame()
+sz <- sz %>% filter(!row.names(sz) %in% c("GHA")) ##Filtering GHA as it does not have GIS coordinates. Therefore, not included in the analysis.
+```
+
+```{r}
+(data.frame(sites = names(al_rich),
+           num_alleles = summary_genind$pop.n.all,
+           allelic_richness = al_rich,
+           gene_div = ghana_hs$means,
+           haplo_freq = sz$.))
+```
+
+### Genetic distance - Fst
+```{r}
+ghana_data <- data.frame(population = pop_id$pops)
+ghana_data <- cbind(ghana_data, ghana_genind$tab)
+(Fst<-genet.dist(ghana_data, method="Fst", diploid = F)) # Fst distance
+```
+
+## Clustering anlaysis
+- Using this [tutorial](https://grunwaldlab.github.io/Population_Genetics_in_R/clustering_plot.html)
+```{r}
+gl_rubi <- vcfR2genlight(myvcf_ghana)
+
+set.seed(12345)
+## To see the cumulative variance plot
+# find.clusters(gl_rubi) # n.pca = 80
+
+maxK <- 20
+myMat <- matrix(nrow=10, ncol=maxK)
+colnames(myMat) <- 1:ncol(myMat)
+for(i in 1:nrow(myMat)){
+  grp <- find.clusters(gl_rubi, n.pca = 80, choose.n.clust = FALSE,  max.n.clust = maxK)  # `find.clusters()` is sensitive to `n.pca` - =200 in the vignette
+  myMat[i,] <- grp$Kstat
+}
+```
+
+- finding the number of clusters
+```{r, warning=FALSE}
+# library(ggplot2)
+library(reshape2)
+my_df <- melt(myMat)
+colnames(my_df)[1:3] <- c("Group", "K", "BIC")
+my_df$K <- as.factor(my_df$K)
+head(my_df)
+```
+
+```{r}
+p1 <- ggplot(my_df, aes(x = K, y = BIC))
+p1 <- p1 + geom_boxplot()
+p1 <- p1 + theme_bw(base_size = 14)
+p1 <- p1 + xlab("Number of groups (K)")
+p1
+```
+### DAPC
+```{r}
+my_k <- 5:8
+
+grp_l <- vector(mode = "list", length = length(my_k))
+dapc_l <- vector(mode = "list", length = length(my_k))
+
+for(i in 1:length(dapc_l)){
+  set.seed(9) ## there's some stochasticity in the find.clusters function
+  grp_l[[i]] <- find.clusters(gl_rubi, n.pca = 80, n.clust = my_k[i])
+  dapc_l[[i]] <- dapc(gl_rubi, pop = grp_l[[i]]$grp, n.pca = 80, n.da = my_k[i])
+}
+```
+
+```{r}
+my_df <- as.data.frame(dapc_l[[length(dapc_l) ]]$ind.coord)
+my_df$Group <- dapc_l[[ length(dapc_l) ]]$grp
+```
+- plot the discriminant functions
+```{r}
+my_pal <- hcl.colors(n=9, palette =  "Set3")
+
+p2 <- ggplot(my_df, aes(x = LD1, y = LD2, fill = Group)) + geom_jitter(alpha = .8, size = 3, shape = 21, color = "black", width = 0.5, height = 0.5)
+p2 <- p2 + theme_bw(base_size = 14)
+p2 <- p2 + scale_color_manual(values=c(my_pal))
+p2 <- p2 + scale_fill_manual(values=c(paste(my_pal, "66", sep = "")))
+p2
+```
+- The output is very sensitive to `n.pca`
+- We need to cross validate and find accurate `n.pca` for our data
+
+##### Cross validation of DAPC
+```{r}
+set.seed(999)
+pramx <- xvalDapc(tab(ghana_genind, NA.method = "mean"), pop(ghana_genind))
+```
+
+```{r}
+set.seed(999)
+system.time(pramx <- xvalDapc(tab(ghana_genind, NA.method = "mean"), pop(ghana_genind),
+                             n.pca = 60:90, n.rep = 100,
+                             parallel = "multicore", ncpus = 8L))
+
+pramx$`Number of PCs Achieving Highest Mean Success` # Output: [1] "72"
+
+```
+- Scatter plot using ggplot2
+- https://tomjenkins.netlify.app/2020/09/21/r-popgen-getting-started/
+```{r, warning=FALSE}
+library(RColorBrewer)
+library(ggthemes)
+library(pals)
+# Create a data.frame containing individual coordinates
+ind_coords = as.data.frame(pramx$DAPC$ind.coord)
+
+# Rename columns of dataframe
+colnames(ind_coords)[1:2] = c("Axis1","Axis2")
+
+# Add a column containing individuals
+ind_coords$Ind = indNames(ghana_genind)
+
+# Add a column with the site IDs
+ind_coords$Site = ghana_genind$pop
+
+# Calculate centroid (average) position for each population
+centroid = aggregate(cbind(Axis1, Axis2) ~ Site, data = ind_coords, FUN = mean)
+
+# Add centroid coordinates to ind_coords dataframe
+ind_coords = left_join(ind_coords, centroid, by = "Site", suffix = c("",".cen"))
+
+# Define colour palette
+cols = hcl.colors(nPop(ghana_genind), "Set3")
+cols <- rainbow(n = nPop(ghana_genind), alpha = 0.5)
+
+# Custom x and y labels
+percent = pramx$DAPC$eig/sum(pramx$DAPC$eig)*100
+xlab = paste("Axis 1 (", format(round(percent[1], 1), nsmall=1)," %)", sep="")
+ylab = paste("Axis 2 (", format(round(percent[2], 1), nsmall=1)," %)", sep="")
+
+# Custom theme for ggplot2
+ggtheme = theme(axis.text.y = element_text(colour="black", size=12),
+                axis.text.x = element_text(colour="black", size=12),
+                axis.title = element_text(colour="black", size=12),
+                panel.border = element_rect(colour="black", fill=NA, size=1),
+                panel.background = element_blank(),
+                plot.title = element_text(hjust=0.5, size=15) 
+)
+# Scatter plot axis 1 vs. 2
+p1 <- ggplot(data = ind_coords, aes(x = Axis1, y = Axis2))+
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = 0)+
+  # spider segments
+  geom_segment(aes(xend = Axis1.cen, yend = Axis2.cen, colour = Site), show.legend = FALSE)+
+  # points
+  geom_point(aes(fill = Site), shape = 21, size = 3, show.legend = FALSE)+
+  # centroids
+  geom_label(data = centroid, aes(label = Site, fill = Site), size = 4, show.legend = FALSE)+
+  # colouring
+  scale_fill_manual(values = cols)+
+  scale_colour_manual(values = cols)+
+  # custom labels
+  labs(x = xlab, y = ylab)+
+  ggtitle("")+
+  # custom theme
+  theme_bw(base_family = "Arial")
+
+p1
+```
+
+
+```{r}
+# my_pal <- hcl.colors(length(unique(pop(ghana_genind))), palette = "Viridis")
+# Define colour palette
+my_pal = hcl.colors(nPop(ghana_genind), "Set3")
+my_pal <- rainbow(n = nPop(ghana_genind), alpha = 0.5)
+ssuresistass<-summary(pramx$DAPC)$assign.per.pop * 100
+group <- factor(rownames(ssuresistass))
+ssuresistass <- ssuresistass %>% as.data.frame() %>% mutate(Group = group) %>% arrange(Group)
+
+p2 <- ggplot(data=ssuresistass, aes(x=Group, y=., fill = Group)) +
+geom_bar(stat="identity", color = "black") +
+coord_flip()+
+ylim(0, 100)+
+scale_x_discrete(limits = ssuresistass$Group)+
+  ylab("% correct assignment") +
+  scale_fill_manual(values=my_pal)+
+theme_bw(base_family = "Arial") + theme(legend.position = "none")
+
+p2
+```
+
+#### Plot DAPC barplot
+Thanks to (this tutorial)[https://luisdva.github.io/rstats/model-cluster-plots/]
+```{r}
+df <- pramx$DAPC$posterior %>% data.frame()
+df$sample_id <- rownames(pramx$DAPC$posterior) %>% as.factor()
+df$comm_id <- pop_id$pops
+
+df_long <- df %>% pivot_longer(cols = 1:11,
+                               names_to = "popGroup",
+                               values_to = "prob") %>% 
+  mutate(popGroup = as_factor(popGroup))
+
+com_id_levels <-  fct_reorder(ghana_sample_info$pop_id, ghana_sample_info$Longitude, .desc = F) %>% levels
+df_long$comm_id <- factor(df_long$comm_id, com_id_levels)
+
+# plotting
+library(forcats)
+
+p3 <- ggplot(df_long, aes(factor(sample_id), prob, fill = factor(popGroup))) +
+  geom_col(color = "black", size = 0.01) +
+  facet_grid(~comm_id, switch = "x", scales = "free", space = "free") +
+  theme_minimal(base_family = "Arial", base_size = 12) + labs(x = "Individuals", title = "", y = "Membership probability") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = 1)) +
+  theme(
+    panel.spacing.x = unit(0.1, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(angle = 90)
+  ) + scale_fill_manual(values=my_pal, guide = "none")
+p3
+```
+
+
+#### Plotting scatter pie
+Thanks to https://cran.r-project.org/web/packages/scatterpie/vignettes/scatterpie.html
+
+```{r}
+posterior_prob <-pramx$DAPC$posterior %>% as.data.frame()
+posterior_prob$site_code <- pop_id$pops
+
+
+posterior_prob_group <- aggregate(posterior_prob[, 1:11], list(posterior_prob$site_code), mean)
+posterior_prob_group$pop_id <- posterior_prob_group$Group.1
+
+sample_loc <- ghana_sample_info %>%  dplyr::select(pop_id, Longitude, Latitude) %>% distinct()
+
+posterior_prob_group2 <- left_join(posterior_prob_group, sample_loc, by = "pop_id") %>% mutate(Group.1 = NULL)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(ggmap)
+glgmap   <- get_map(location = c(-2.609, 7.627, 0.194, 8.809), ## bounding box
+                    maptype= "terrain-background", 
+                    col = "color")    
+p_base <- ggmap(glgmap) + theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+```
+
+```{r, message=FALSE}
+library(scatterpie)
+library(ggrepel)
+library(ggspatial)
+comm_code <- names(posterior_prob_group2)[1:11] # 1:3 for communities
+p_pie <- p_base + geom_scatterpie(aes(x=Longitude, y=Latitude, group=pop_id), data=posterior_prob_group2,                           cols=comm_code) + 
+  scale_fill_manual(values=my_pal, name = "Group") + theme(legend.position="none") +
+  geom_label_repel(data = posterior_prob_group2, aes(Longitude, Latitude, label = pop_id), size = 4, alpha = 0.7) +
+  coord_equal()+ coord_sf(crs = sf::st_crs(4326)) + 
+  annotation_scale(location = "br", width_hint = 0.5) +
+  annotation_north_arrow(location = "tl", which_north = "true",
+        pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+        style = north_arrow_fancy_orienteering)
+
+p_pie
+```
+
+## Load data
+```{r}
+# ghana_sample_info <- read.csv("Code/Project codes/211028_Ghana_analysis/data/211110_ghana_sample_info.csv")
+data_ghana2 <- ghana_sample_info
+coordinates(data_ghana2) <- (data_ghana2[, c("Longitude","Latitude")])
+data_ghana2 <- data_ghana2 %>% st_as_sf() 
+st_crs(data_ghana2) = 4326
+extent_wgs84 <- extent(data_ghana2)
+```
+
+- change coordinates to planar UTM
+```{r}
+lonlat2UTM = function(lonlat) {
+  utm = (floor((lonlat[1] + 180) / 6) %% 60) + 1
+  if(lonlat[2] > 0) {
+    utm + 32600
+  } else{
+    utm + 32700
+  }
+}
+
+ghana_sample_info %>% dplyr::select(Longitude, Latitude) %>% unique() %>% as.matrix() -> coordinates_ghana
+## example
+apply(coordinates_ghana, MARGIN = 1, FUN = lonlat2UTM)
+epsg_ghana_UTM <- 32630
+st_crs(epsg_ghana_UTM)$proj4string
+utm_proj_ghana <- st_crs(epsg_ghana_UTM)$proj4string  # "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+```
+
+```{r}
+data_ghana2 <- data_ghana2 %>% st_transform(crs = utm_proj_ghana)
+data_ghana2 <- as(data_ghana2, "Spatial")
+```
+
+
+### Bounding box
+```{r}
+hull <- gConvexHull(data_ghana2)
+# hull_buffer <- gBuffer(hull, width = 35000)
+# proj4string(hull_buffer) = CRS("+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+
+## rectangular extent
+# extent(hull_buffer)
+bbox_buffer <- as(raster::extent(557845.6, 851520.9, 844447.4, 973827), "SpatialPolygons")
+proj4string(bbox_buffer) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+```
+
+## Visualise parasite sampling locations
+
+## Get Data
+```{r}
+# Ghana maps
+ghana_map_0 <- raster::getData('GADM', country='GHA', level=0) %>% st_as_sf %>% st_transform(crs = st_crs(bbox_buffer))
+ghana_map_1 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_1.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(bbox_buffer))
+ghana_map_2 <- readOGR("data/gadm41_GHA_shp/gadm41_GHA_2.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(bbox_buffer))
+
+# bbox_buffer <- readOGR("data/bbox_buffer_shp/bbox_buffer_wgs84.shp") %>% st_as_sf() %>% st_transform(crs = crs(ghana_map_1))
+
+ghana_parks <- readOGR("data/forests_parks/Forest_and_Game_Reserves.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(bbox_buffer))
+
+```
+
+
+### Getting river data
+```{r}
+water_lines <- readOGR("data/GHA_wat/GHA_water_lines_dcw.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(bbox_buffer))
+water_lines_perrennial <- water_lines %>% dplyr::filter(HYC_DESCRI == "Perennial/Permanent")
+
+water_bodies <- readOGR("data/GHA_wat/GHA_water_areas_dcw.shp", verbose = FALSE) %>% st_as_sf() %>% st_transform(crs = crs(bbox_buffer))
+```
+
+### Plot map of Africa with Ghana highlightes
+```{r}
+library(spData)
+data("world")
+
+ghana <- world[world$name_long == "Ghana", ]
+world_africa <- world[world$continent == "Africa", ]
+plot(st_geometry(world_africa))
+plot(st_geometry(ghana), col = "#9fc9af", lwd = 3, add = TRUE)
+```
+
+### Plot map of Ghana
+
+```{r}
+plot(st_geometry(ghana_map_0))
+plot(st_geometry(water_bodies), col = "lightblue", add= TRUE)
+```
+
+## Visualise data
+
+- extract only Bui national park
+```{r}
+# forest_reserves <- ghana_parks %>% dplyr::filter(Type == "Forest_reserves")
+bui_np <- ghana_parks %>% dplyr::filter(ID == "Bui NP")
+
+bui_np_sp <- as_Spatial(bui_np)
+bbox_buffer_sf <- bbox_buffer %>% st_as_sf()
+
+bui_np_crop <- st_intersection(bui_np, bbox_buffer_sf) # crop national park to the transition region boundary
+
+# ghana_map_1_crop <- st_intersection(ghana_map_1, bbox_buffer) # crop ghana administrative borders to the transition region boundary
+
+# ghana_map_2_crop <- st_intersection(ghana_map_2, bbox_buffer) # crop ghana administrative borders to the transition region boundary
+
+# plot(st_geometry(bui_np_crop))
+```
+### Plotting elevation
+```{r}
+# alt_r <- raster::getData('alt', country='GHA')
+alt <- covariates_list[[1]]
+
+slope <- raster::terrain(alt, opt='slope')
+aspect <- terrain(alt, opt='aspect')
+
+# Calculate hillshade -----------------------------------------------------
+hill <- hillShade(slope, aspect, 40, 270)
+```
+
+
+### Get the sample information data
+```{r}
+
+
+# to identify the regions for the merged communities
+# sample_info <- read.csv("data/ghana_sampling_sites_2.csv", stringsAsFactors = TRUE)
+```
+
+## Plot the map using ggplot2
++ Thanks to [this](https://stackoverflow.com/questions/11179666/ggplot2-raster-plotting-does-not-work-as-expected-when-setting-alpha-values)
+```{r}
+hs <-  hill
+dem <- alt
+
+#   Convert rasters TO dataframes for plotting with ggplot
+hdf <- rasterToPoints(hs); hdf <- data.frame(hdf)
+colnames(hdf) <- c("X","Y","Hill")
+ddf <- rasterToPoints(dem); ddf <- data.frame(ddf)
+colnames(ddf) <- c("X","Y","DEM")
+
+#   Create vectors for colour breaks
+b.hs <- seq(min(hdf$Hill),max(hdf$Hill),length.out=100)
+b.dem <- seq(min(ddf$DEM),max(ddf$DEM),length.out=100)
+```
+
+```{r}
+ghana_site_info$n_samples <- summary(ghana_sample_info$pop_id)
+```
+
+```{r}
+library(ggpattern)
+p <- ggplot() + 
+  geom_raster(data = ddf, aes(X, Y, fill = DEM, alpha = 2)) +
+  geom_raster(data = hdf, aes(X, Y, alpha = Hill)) +
+  scale_fill_gradientn(name="Altitude (m)",colours = terrain.colors(20))+
+  guides(fill = guide_colorbar()) +
+  scale_alpha(range = c(0, 0.5), guide = "none") +
+  coord_equal() + theme_void()
+
+map_data_pattern <- fortify(as_Spatial(bui_np_crop))
+## Boundary
+p1 <- p + 
+  geom_sf(data = ghana_map_1, col = "black", lwd = 1, lty = 1, alpha = 0.01) +
+  # geom_sf(data = ghana_map_2, col = "black", lwd = 1, lty = 1, alpha = 0.01)+
+  # geom_sf(data = bui_np_crop, col = "black", fill = "lightcyan3", lwd = 0.5, lty = 1, alpha = .9)+
+   geom_map_pattern(data = map_data_pattern,
+      aes(map_id = id),
+      pattern = "stripe",
+      pattern_alpha = 1,
+      fill   = 'lightcyan3',
+      colour = 'black',
+      pattern_fill = "black",
+      pattern_angle = 45,
+      map    = map_data_pattern
+    ) +
+  geom_sf(data = water_lines_perrennial, col = "steelblue", lwd = 0.8) +
+  geom_sf(data = water_bodies, fill = "lightblue", col = "black", alpha = .9)+
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844447.4, 973827 ),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557845.6, 851520.9 ),expand=c(0,0))
+
+
+scale_bar <- p1 +
+  annotation_scale(location = "br", width_hint = 0.5) 
+
+direction <- scale_bar +
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.05, "in"), pad_y = unit(0.05, "in"),
+        style = north_arrow_fancy_orienteering)
+
+p3 <- direction + geom_point(data = ghana_site_info, aes(LONG, LAT, size = n_samples), shape = 21, fill = "white", alpha = .8, colour = "black", stroke = 1) +
+  geom_label_repel(data = ghana_site_info, aes(LONG, LAT, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) + scale_shape_manual(values = c(21,24))
+
+
+p3$labels$size <- "Samples" #"Sample size"
+p3
+```
+
+
+### Find which locations belong to which region
+```{r}
+sample_info_spdf <- SpatialPointsDataFrame(coords = ghana_site_info[,c("LONG", "LAT")], data = ghana_site_info,
+                               proj4string = crs(ghana_map_2))
+ghana_map_2sp <- ghana_map_2 %>% as_Spatial()
+sample_info_region <- sample_info_spdf %over% ghana_map_2sp
+sample_info_region <- sample_info_region %>% dplyr::select(NAME_1, NAME_2)
+
+ghana_site_info$region <- sample_info_region$NAME_1 %>% as.factor()
+ghana_site_info$district <- sample_info_region$NAME_2 %>% as.factor()
+```
+
+
+#### Vector samples
+```{r, eval=FALSE}
+sample_info <- read.csv("data/220918_ghana_vector_samples.csv", stringsAsFactors = TRUE)
+
+coordinates(sample_info) <- (sample_info[, c("X","Y")])
+sample_info <- sample_info %>% st_as_sf()
+st_crs(sample_info) = 4326
+sample_info_utm <- sample_info %>% st_transform(crs = utm_proj_ghana)
+
+sample_info_utm[, c("LONG", "LAT")] <- st_coordinates(sample_info_utm)
+
+# sample_info_vectors <- sample_info %>% dplyr::filter(samples == "vectors")
+
+vector_only <- direction + geom_point(data = sample_info_utm, aes(LONG, LAT, size = num_samples), shape = 21, fill = "white", alpha = 1, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info_utm, aes(LONG, LAT, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18)
+
+vector_only$labels$size <- "Sample size"
+vector_only
+```
+
+## Isolation by distance
++ Mantel test
+```{r}
+library(vegan)
+## genetic distance
+reynolds_fst <- as.matrix(Fst)
+
+## Linearized genetic distances
+reynolds_fst_lin <- reynolds_fst / (1-reynolds_fst)
+
+
+ghana_site_info
+mat_geo <- mat_geo_dist(data = ghana_site_info, ID = "pop_id", x = "LONG", y = "LAT", crds_type = "proj")
+mat_geo_km <- mat_geo/1000
+
+### in correct order
+order <- row.names(reynolds_fst)[order(c(as.character(row.names(reynolds_fst))))]
+mat_geo_km <- reorder_mat(mat = mat_geo_km, order = order)
+# reynolds_fst <- reorder_mat(mat = reynolds_fst, order = order)
+
+rownames(reynolds_fst) == rownames(mat_geo_km)
+
+
+##### Perform Mantel tests #####
+mantel_reynold_fst <- mantel(as.dist(reynolds_fst_lin), as.dist(mat_geo_km), permutations = 10000)
+mantel_reynold_fst
+```
+TODO check the reported statistics differ from the one calculated here
+
+## Selection of environmental variables
+## Covariates list
+```{r}
+cov_volvulus <- stack("data/220228_cov_volvulus.grd")
+```
+
+## _O. volvulus_ genetics
+```{r}
+parasite_locations <- read.csv("data/220228_parasites_UTMcoords.csv") %>% mutate(X = NULL, Comm_code = pop_id)
+
+ghana_points <- parasite_locations %>% dplyr::select(Comm_code, LONG, LAT)
+```
+
+#### Extract the environemental values
+```{r}
+covariates <- names(cov_volvulus)[-26] # removing land cover
+cov_volvulus2 <- cov_volvulus[[covariates]]
+
+time1 <- Sys.time()
+for (i in 1:length(covariates)) {
+  covariate <- cov_volvulus2[[i]]
+  ghana_matrix <- pairwise_matrix(n_rows = nrow(ghana_points), rast_f = covariate)
+  rownames(ghana_matrix) <- colnames(ghana_matrix) <- ghana_points$Comm_code
+  ghana_matrix[lower.tri(ghana_matrix)] <- t(ghana_matrix)[lower.tri(ghana_matrix)]
+  df <- pw_mat_to_df(ghana_matrix)
+  if (i == 1) {
+    df2 <- df
+  } else {
+    df2 <- cbind(df2, df$value)
+  }
+  colnames(df2)[i+3] <- covariates[i]
+  print(paste0("Covariate ", i, " of ", length(covariates), " completed."))
+  print(paste0("Time taken: ", Sys.time()-time1, "."))
+}
+
+## Took slightly above 8 minutes
+# df2 %>% write.csv("data/220301_cov_volvulus.csv")
+```
+#### Partition the data
+```{r}
+ov_covs <- read.csv("data/220301_cov_volvulus.csv")
+ov_covs[, c("id_link")] <- NULL
+
+temp_covariates <- c(names(ov_covs)[c(4:14, 23:24)])
+temp_data <- ov_covs[, temp_covariates]
+
+precip_covariates <- c(names(ov_covs)[15:22])
+precip_data <- ov_covs[, precip_covariates]
+
+elev_data <- ov_covs[, c("elevation", "slope")]
+vegind_data <- ov_covs[, c("EVI1012_GT_utm", "NDVI1012_GT_utm")]
+hydro_data <- ov_covs[, c("FC_GT_utm", "TCW1012_GT_utm", "SM1012_GT_utm", "distwater_GT_utm")]
+
+sociodem_data <- ov_covs[, c("popden1012_GT_utm",
+                          "housing0115_GT_utm", "nightlights1012_GT_utm")]
+```
+
+#### PCA analysis
+```{r}
+ov_covs2 <- ov_covs[,c(-1,-2)]
+
+res.pca <- PCA(ov_covs2, scale.unit = TRUE, graph = TRUE)
+
+
+fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 70))
+```
++ first 3 axis explains >80% of variance (89.9%)
+
+### For publication
+22 Mar, 2022
+```{r}
+ov_covs3 <- ov_covs2 %>% dplyr::select(annual_mean_temperature, annual_diurnal_range, temperature_seasonality, maximum_temperature_warmest_month, minimum_temperature_coldest_month, temperature_annual_range, mean_temperature_wettest_quarter, mean_temperature_driest_quarter, mean_temperature_warmest_quarter, mean_temperature_coldest_quarter, isothermality, LST_day_1012, LST_night_1012, annual_precpitation, precipitation_wettest_month, precipitation_driest_month, precipitation_wettest_quarter, precipitation_dreist_quarter, precipitation_warmest_quarter, precipitation_coldest_quarter, precipitation_seasonality, elevation, slope, NDVI1012_GT_utm, EVI1012_GT_utm, FC_GT_utm, distwater_GT_utm, TCW1012_GT_utm, SM1012_GT_utm, popden1012_GT_utm, housing0115_GT_utm, nightlights1012_GT_utm)
+
+names(ov_covs3) <- c("BIO1", "BIO2", paste0("BIO",4:11), "BIO3", paste0("BIO",c(12:14,16:19)), "BIO15", "LSTD", "LSTN", "DEM", "SLP", "NDVI", "EVI", "FC", "DW", "TCW", "SM", "PD", "IHP", "NL")
+```
+
+```{r}
+corr <- cor(ov_covs3)
+# p.mat <- cor_pmat(ov_covs3)
+p_corr <- ggcorrplot(corr, type = "lower", #  p.mat = p.mat,
+   lab = TRUE, digits = 1, insig = "blank"
+   )
+p_corr
+
+# ggsave(plot = p_corr, filename = "docs/220322_covvolvulus_correlation.png", device = "png", dpi = 500, width = 12, height = 12, units = "in" )
+```
+
+```{r}
+res.pca <- PCA(ov_covs3, scale.unit = TRUE, graph = TRUE)
+
+p_pca <- fviz_pca_var(res.pca, col.var = "black") + ggtitle("")
+p_scree <- fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 60)) + ggtitle("")
+p_contrib <- fviz_contrib(res.pca, choice = "var", axes = 1:5, top = 100) + theme(axis.text.x = element_text(angle=90)) + ggtitle("")
+```
+
+```{r}
+library(patchwork)
+p <- (p_pca + p_scree)/p_contrib + plot_annotation(tag_levels = "A")
+
+# ggsave(plot = p, filename = "docs/220322_covvolvulus_PCA.png", device = "png", dpi = 800, width = 8, height = 10.66, units = "in" )
+```
+
+-------
+
+```{r}
+p <- fviz_contrib(res.pca, choice = "var", axes = 1:3, top = 100) + theme(axis.text.x = element_text(angle=90))
+# ggsave(plot = p, filename = "docs/220301_covOv_varcontrib.png", device = "png", dpi = 1000, width = 12, height = 8, units = "in" )
+```
+
+#### Temperature variables
+
+```{r}
+corr <- cor(temp_data[, 1:13])
+p.mat <- cor_pmat(temp_data[, 1:13])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+# ggsave(plot = p, filename = "docs/220228_tempcor.png", device = "png", dpi = 1000, width = 8, height = 8, units = "in" )
+```
+
+```{r}
+# tree = hclustvar(X.quanti = temp_data[, 1:13])
+# plot(tree)
+```
++ `LST_day_1012`, `LST_night_1012`, `isothermality`, `maximum_temperature_warmest_month`, `minimum_temperature_coldest_month`, `mean_temperature_wettest_quarter`, and `annual_diurnal_range`
+
+```{r}
+temp_covselected <- c("LST_day_1012", "LST_night_1012", "isothermality", "maximum_temperature_warmest_month", "minimum_temperature_coldest_month", "mean_temperature_wettest_quarter", "annual_diurnal_range")
+temp_selected <- temp_data[,temp_covselected]
+corr <- cor(temp_selected)
+p.mat <- cor_pmat(temp_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+```
+
+```{r}
+# tree = hclustvar(X.quanti = temp_selected)
+# plot(tree)
+```
++ "isothermality", "maximum_temperature_warmest_month", "mean_temperature_wettest_quarter"
+
+```{r}
+temp_covselected <- c("isothermality", "maximum_temperature_warmest_month", "mean_temperature_wettest_quarter")
+temp_selected <- temp_data[,temp_covselected]
+corr <- cor(temp_selected)
+p.mat <- cor_pmat(temp_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+```
+
+#### Precipitation variables
+```{r}
+corr <- cor(precip_data)
+p.mat <- cor_pmat(precip_data)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+```{r}
+# tree = hclustvar(X.quanti = precip_data)
+# plot(tree)
+```
++ "annual_precpitation", "precipitation_dreist_quarter", "precipitation_warmest_quarter", "precipitation_wettest_month"
+
+```{r}
+precip_covselected <- c("annual_precpitation", "precipitation_dreist_quarter", "precipitation_warmest_quarter", "precipitation_wettest_month")
+precip_selected <- precip_data[,precip_covselected]
+corr <- cor(precip_selected)
+p.mat <- cor_pmat(precip_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+
+# tree = hclustvar(X.quanti = precip_selected)
+# plot(tree)
+```
++ "annual_precipitation", "precipitation_wettest_month"
+```{r}
+precip_covselected <- c("annual_precpitation", "precipitation_wettest_month")
+precip_selected <- precip_data[,precip_covselected]
+corr <- cor(precip_selected)
+p.mat <- cor_pmat(precip_selected)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+```
+
+#### Elevation/slope
+```{r}
+corr <- cor(elev_data)
+p.mat <- cor_pmat(elev_data[, 1:2])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
++ "elevation" selected
+```{r}
+elev_covselected <- c("elevation")
+```
+
+#### Vegind data
+```{r}
+corr <- cor(vegind_data)
+p.mat <- cor_pmat(vegind_data)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
++ `NDVI1012_GT_utm` selected
+```{r}
+vegind_covselected <- "NDVI1012_GT_utm"
+```
+
+#### Hydro data
+```{r}
+corr <- cor(hydro_data)
+p.mat <- cor_pmat(hydro_data)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
++ "FC_GT_utm", "TCW1012_GT_utm", "SM1012_GT_utm" selected
+
+```{r}
+hydro_covselected <- c("FC_GT_utm", "TCW1012_GT_utm", "SM1012_GT_utm")
+```
+
+
+#### Socio demographic data
+```{r}
+corr <- cor(sociodem_data)
+p.mat <- cor_pmat(sociodem_data)
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
++ All selected
+```{r}
+sociodem_covselected <- c("popden1012_GT_utm", "housing0115_GT_utm", "nightlights1012_GT_utm")
+```
+
+#### Round 1 covs
+```{r}
+selected_covs_ovr1 <- c(temp_covselected, precip_covselected, elev_covselected, vegind_covselected, hydro_covselected, sociodem_covselected)
+```
+
+```{r}
+corr <- cor(ov_covs[, selected_covs_ovr1])
+p.mat <- cor_pmat(ov_covs[, selected_covs_ovr1])
+p <- ggcorrplot(corr, type = "lower", # p.mat = p.mat,
+   lab = TRUE, digits = 2, insig = "blank")
+p
+```
+
+```{r}
+# tree = hclustvar(X.quanti = ov_covs[, selected_covs_ovr1])
+# plot(tree)
+```
+
++ "maximum_temperature_warmest_month", "isothermality", "precipitation_wettest_month", "FC_GT_utm", "annual_precpitation"
++ "elevation" included instead of "maximum_temperature_warmest_month"
+```{r}
+selected_covs_ovr2 <- c("elevation", "isothermality", "precipitation_wettest_month", "FC_GT_utm", "annual_precpitation")
+ovcovs_selected <- cov_volvulus[[selected_covs_ovr2]]
+```
+
++ Correlated variables were chosen so as to include the variable of interest
+```{r}
+selected_covs_ovr2 <- c("elevation", "isothermality", "SM1012_GT_utm", "FC_GT_utm", "annual_precpitation")
+ovcovs_selected <- cov_volvulus[[selected_covs_ovr2]]
+```
+
+- Same covariates were selected for the _Simulium_ landscape genetics as well for easier comparison
+
+## Resistance surface optimisation
+- Resistance surface optimisation was done using the `ResistanceGA` package and `Circuitscape` in Julia
+- Please go through these [setup instructions](https://github.com/wpeterman/ResistanceGA) before you proceed
+- Custom function for the optimisation of resistance surface
+
+```{r}
+# Function
+optimise_resistance <- function(cont.rast, write.dir = "data/210712_resistanceGA_100/"){
+  GA.inputs <- GA.prep(ASCII.dir = cont.rast,
+                       Results.dir = write.dir,
+                       select.trans = list("A"),
+                       method = "LL",
+                       # max.scale = par[id,"max_scale"]/cell_size,
+                       max.cat=100,
+                       max.cont=100,
+                       parallel = 10,
+                       gaisl = FALSE,
+                       # island.pop = 25,
+                       # numIslands = 10,
+                       run = 50,
+                       maxiter = 1000,
+                       # quiet = FALSE,
+                       # maxiter=1000
+                       pop.mult = 30
+                       # scale=TRUE,
+                       # scale.surfaces = parms$scale
+  )
+  
+  jl.inputs <- jl.prep(n.Pops = length(sample.coords),
+                       response = lower(genetic_distance),
+                       CS_Point.File = sample.coords,
+                       cholmod = T,
+                       JULIA_HOME = JULIA_HOME
+  )
+  # Run optimization
+  SS_RESULTS <- SS_optim(jl.inputs = jl.inputs,
+                                     GA.inputs = GA.inputs)
+  return(SS_RESULTS)
+}
+
+```
+
+```{r}
+# Load packages
+library("lme4")
+library("ggplot2")
+library("sp")
+library("raster")
+library("lme4")
+library(rgdal)
+library(ResistanceGA)
+library("parallel")
+library("doParallel")
+library(tictoc)
+```
+
+
+```{r}
+# Load data ---------------------------------------------------------------
+ghana_popgen <- readRDS("Code/Project codes/211028_Ghana_analysis/data/rds_transition_ghana_popgen.rds")
+ghana_GIS <- readRDS("Code/Project codes/211028_Ghana_analysis/data/rds_transition_ghana.rds")
+ghana_sites_selected <- ghana_GIS[[3]]
+coordinates(ghana_sites_selected) <- ghana_sites_selected[,c("LONG", "LAT")]
+covs_volvulus <- stack("Data/Ghana GIS/220228_cov_volvulus.grd")
+covs_selected <- c("elevation", "isothermality", "SM1012_GT_utm", "FC_GT_utm", "annual_precpitation")
+
+covariates_selected <- covs_volvulus[[covs_selected]]
+covariates_list <- aggregate(covariates_selected, fact = 2, fun = mean, na.rm = TRUE)
+
+covariates_selected %>% values %>% summary()
+
+reynolds_fst <- ghana_popgen[[2]]
+genetic_distance <- reynolds_fst/(1-reynolds_fst)
+
+## Sample locations
+sample.coords <- as(ghana_sites_selected,"SpatialPoints")
+
+JULIA_HOME = 'C:/Users/User/AppData/Local/Programs/Julia-1.6.1/bin'  # Path to Julia
+
+# Elevation ---------------------------------------------------------------
+cont.rast <- covariates_list[[1]]
+
+## Iteration 1
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/220302_", names(covariates_list)[1],"_1/")  
+if(!dir.exists(write.dir)) dir.create(write.dir)
+
+resistance_elevation1 <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+
+elevation_resist_1 <- raster(paste0(write.dir,"Results/elevation.asc"))
+
+## Iteration 2
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/220302_", names(covariates_list)[1],"_2/")  
+if(!dir.exists(write.dir)) dir.create(write.dir)
+
+resistance_elevation2 <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+elevation_resist_2 <- raster(paste0(write.dir,"Results/elevation.asc"))
+
+
+## Iteration 3
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/220302_", names(covariates_list)[1],"_3/")  
+if(!dir.exists(write.dir)) dir.create(write.dir)
+
+resistance_elevation3 <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+
+## Iteration 4
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/220302_", names(covariates_list)[1],"_4/")  
+if(!dir.exists(write.dir)) dir.create(write.dir)
+
+resistance_elevation4 <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+- Similar optimisation for Isothermality, Soil moisture, Flow accumulation, Precipitation for 4 iterations
+
+## Exploring the resistance surfaces
+```{r}
+library(raster)
+library(ResistanceGA)
+library(sf)
+library(RColorBrewer)
+library(tmap)
+library(ggplot2)
+library(tictoc)
+library(graph4lg)
+library(gdistance)
+library(vegan)
+library(PopGenReport)
+library(graph4lg)
+library("parallel")
+library("doParallel")
+library(rgdal)
+library(spatialEco)
+library(climateStability)
+```
+
+```{r}
+ghana_popgen <- readRDS("data/rds_transition_ghana_popgen.rds")
+ghana_GIS <- readRDS("data/rds_transition_ghana.rds")
+ghana_sites_selected <- ghana_GIS[[3]]
+coordinates(ghana_sites_selected) <- ghana_sites_selected[,c("LONG", "LAT")]
+covs_volvulus <- stack("../../../Data/Ghana GIS/220228_cov_volvulus.grd")
+covs_selected <- c("elevation", "isothermality", "SM1012_GT_utm", "FC_GT_utm", "annual_precpitation")
+
+covariates_selected <- covs_volvulus[[covs_selected]]
+covariates_list <- aggregate(covariates_selected, fact = 2, fun = mean, na.rm = TRUE)
+
+covariates_selected %>% values %>% summary()
+
+reynolds_fst <- ghana_popgen[[2]]
+genetic_distance <- reynolds_fst/(1-reynolds_fst)
+geo_dist_GT <- ghana_GIS[[2]]
+
+## Sample locations
+sample.coords <- as(ghana_sites_selected,"SpatialPoints")
+
+bbox_buffer <- ghana_GIS[[1]]
+```
+
+- prepare for Julia call
+```{r}
+JULIA_HOME = 'C:/Users/User/AppData/Local/Programs/Julia-1.6.1/bin'
+
+jl.inputs <- jl.prep(n.Pops = length(sample.coords),
+                     response = lower(genetic_distance),
+                     CS_Point.File = sample.coords,
+                     cholmod = T,
+                     JULIA_HOME = JULIA_HOME
+)
+```
+### Load functions
++ Generate the circuit distance -------------------------------------------
++ https://stackoverflow.com/questions/56387581/converting-a-vector-in-r-into-a-lower-upper-triangular-matrix-in-specific-order
+
+```{r}
+circuit_matrix <- function(current){
+  mat <- matrix(0, nrow = 11, ncol = 11)
+  mat[lower.tri(mat, diag = FALSE)] <- current
+  mat <- mat + t(mat)
+  colnames(mat) <- rownames(mat) <- ghana_sites_selected$pop_id
+  return(mat)
+}
+```
+
+
+## Explore ResistanceGA output
++ create dataframe to store output
+```{r}
+output_df <- data.frame(variables = rep(c("Elevation", "Iso thermality", "Soil moisture", "Flow accumulation", "Precipitation"), times = c(4,4,4,4,4)),
+                        replicates = rep(1:5, times = 4),
+                        mantel_r = NA,
+                        mantel_p = NA,
+                        lgMMRR_p = NA,
+                        lgMMRR_r2 = NA,
+                        pmantel_r = NA,
+                        pmantel_p = NA)
+```
+
+### Elevation
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_1/")  
+
+write.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elevation_resist_1 <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev1_circuit_distance <- Run_CS.jl(jl.inputs, elevation_resist_1, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev1_circuit_matrix <- circuit_matrix(current = elev1_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev1_current <- Run_CS.jl(jl.inputs, elevation_resist_1, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev1_mantel <- mantel(as.dist(genetic_distance), as.dist(elev1_circuit_matrix), permutations = 10000)
+output_df[1, 3:4] <- c(elev1_mantel$statistic, elev1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+cost_d1 <-  list(elev1_circuit_matrix)
+names(cost_d1) <- c("elevation")
+set.seed(12345)
+elev1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = cost_d1, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[1, 5:6] <- c(elev1_lgMMRR$mmrr.tab$tpvalue[1],elev1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+elev1_pmantel <- mantel.partial(xdis = as.dist(elev1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[1, 7:8] <- c(elev1_pmantel$statistic, elev1_pmantel$signif)
+```
+
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_2/")  
+
+write.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elevation_resist_2 <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev2_circuit_distance <- Run_CS.jl(jl.inputs, elevation_resist_2, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev2_circuit_matrix <- circuit_matrix(current = elev2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev2_current <- Run_CS.jl(jl.inputs, elevation_resist_2, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev2_mantel <- mantel(as.dist(genetic_distance), as.dist(elev2_circuit_matrix), permutations = 10000)
+output_df[2, 3:4] <- c(elev2_mantel$statistic, elev2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+cost_d2 <-  list(elev2_circuit_matrix)
+names(cost_d2) <- c("elevation")
+set.seed(12345)
+elev2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = cost_d2, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[2, 5:6] <- c(elev2_lgMMRR$mmrr.tab$tpvalue[1],elev2_lgMMRR$mmrr.tab$r2[1])
+```
++ partial mantel
+```{r}
+set.seed(12345)
+elev2_pmantel <- mantel.partial(xdis = as.dist(elev2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[2, 7:8] <- c(elev2_pmantel$statistic, elev2_pmantel$signif)
+```
+
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_3/")  
+
+write.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev3_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev3_circuit_distance <- Run_CS.jl(jl.inputs, elev3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev3_circuit_matrix <- circuit_matrix(current = elev3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev3_current <- Run_CS.jl(jl.inputs, elev3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev3_mantel <- mantel(as.dist(genetic_distance), as.dist(elev3_circuit_matrix), permutations = 10000)
+
+output_df[3, 3:4] <- c(elev3_mantel$statistic , elev3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev3_cost <-  list(elev3_circuit_matrix)
+names(elev3_cost) <- c("elevation")
+set.seed(12345)
+elev3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[3, 5:6] <- c(elev3_lgMMRR$mmrr.tab$tpvalue[1],elev3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+elev3_pmantel <- mantel.partial(xdis = as.dist(elev3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[3, 7:8] <- c(elev3_pmantel$statistic, elev3_pmantel$signif)
+```
+
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_4/")  
+
+write.dir <- paste0("results/registanceGA/220302_", names(covariates_list)[1],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev4_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev4_circuit_distance <- Run_CS.jl(jl.inputs, elev4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev4_circuit_matrix <- circuit_matrix(current = elev4_circuit_distance)
+```
+```{r}
+# cumulative current map
+elev4_current <- Run_CS.jl(jl.inputs, elev4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev4_mantel <- mantel(as.dist(genetic_distance), as.dist(elev4_circuit_matrix), permutations = 10000)
+output_df[4, 3:4] <- c(elev4_mantel$statistic, elev4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev4_cost <-  list(elev4_circuit_matrix)
+names(elev4_cost) <- c("elevation")
+set.seed(12345)
+elev4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[4, 5:6] <- c(elev4_lgMMRR$mmrr.tab$tpvalue[1],elev4_lgMMRR$mmrr.tab$r2[1])
+```
++ partial mantel
+```{r}
+set.seed(12345)
+elev4_pmantel <- mantel.partial(xdis = as.dist(elev4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[4, 7:8] <- c(elev4_pmantel$statistic, elev4_pmantel$signif)
+```
+
++ Looking at the scores - replicate 3 was the best
+```{r}
+elevation_conductance <- raster.invert(elev3_resist)
+elevation_conductance_rescaled <- rescale0to1(elevation_conductance)
+```
+
+- Same process was repeated for other selected variables
+
+## Compostie resitance surface
+Code\Project codes\211028_Ghana_analysis\220304_resistance_juliaexplore.Rmd
+```{r}
+SM_conductance <- raster.invert(SM1_resist)
+SM_conductance_rescaled <- rescale0to1(SM_conductance)
+
+composite_conductance <- elevation_conductance_rescaled * SM_conductance_rescaled
+```
+
+## Bivariate maps
++ Thanks to https://rfunctions.blogspot.com/2015/03/bivariate-maps-bivariatemap-function.html
+```{r}
+# set the directory to where the mean prevalence map and the conductance maps are
+setwd("C:/Users/19226876/OneDrive - LA TROBE UNIVERSITY/Onchocerciasis/PhD/Genomics/Code/Project codes/211028_Ghana_analysis/")
+
+# Load libraries ----------------------------------------------------------
+suppressMessages({
+  library(tidyverse);
+  library(sf);
+  library(tmap);
+  library(raster);
+  library(RColorBrewer);
+  library(INLAutils);
+  ## for bivariate maps
+  library(classInt);
+  library(rgdal);
+  library(dismo);
+  library(XML);
+  library(maps);
+  library(sp);
+  
+})
+
+# extrafont::loadfonts(device="win", quiet = T)
+
+# Load data ---------------------------------------------------------------
+r_prev_mean <- raster("data/220305_GT_meanprev.asc")  # Mean prevalence map
+volv_conductance <- raster("data/220507_elevSMconductance.asc")  # Conductance surface map
+
+
+# Reproject to 1km --------------------------------------------------------
+covs_simulium <- stack("../../../Data/Ghana GIS/220228_cov_simulium.grd")
+r <- covs_simulium[[1]]
+reproj2 <- function(tbc, c){
+  tbc <- crop(tbc,c)
+  tbc <- projectRaster(tbc, c)
+}
+
+crs(volv_conductance) <-  crs(r_prev_mean) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+r_prev_meankm <- reproj2(tbc = r_prev_mean, c = r)
+volv_conductancekm <- reproj2(tbc = volv_conductance, c = r)
+# Bivariate color palatte -------------------------------------------------
+
+library(pals)
+bivcol = function(pal){
+  tit = substitute(pal)
+  pal = pal()
+  ncol = length(pal)
+  image(matrix(seq_along(pal), nrow = sqrt(ncol)),
+        axes = FALSE, 
+        col = pal, 
+        asp = 1)
+  mtext(tit)
+}
+# bivcol(brewer.divseq)
+# bivcol(brewer.qualseq)
+# bivcol(brewer.seqseq1)
+
+# Bivariate map functions-----------------------------------------------------------
+
+colmat<-function(nquantiles=10, upperleft=rgb(0,150,235, maxColorValue=255), upperright=rgb(130,0,80, maxColorValue=255), bottomleft="grey", bottomright=rgb(255,230,15, maxColorValue=255), xlab="x label", ylab="y label"){
+  my.data<-seq(0,1,.01)
+  my.class<-classIntervals(my.data,n=nquantiles,style="quantile")
+  my.pal.1<-findColours(my.class,c(upperleft,bottomleft))
+  my.pal.2<-findColours(my.class,c(upperright, bottomright))
+  col.matrix<-matrix(nrow = 101, ncol = 101, NA)
+  for(i in 1:101){
+    my.col<-c(paste(my.pal.1[i]),paste(my.pal.2[i]))
+    col.matrix[102-i,]<-findColours(my.class,my.col)}
+  plot(c(1,1),pch=19,col=my.pal.1, cex=0.5,xlim=c(0,1),ylim=c(0,1),frame.plot=F, xlab=xlab, ylab=ylab,cex.lab=1.3)
+  for(i in 1:101){
+    col.temp<-col.matrix[i-1,]
+    points(my.data,rep((i-1)/100,101),pch=15,col=col.temp, cex=1)}
+  seqs<-seq(0,100,(100/nquantiles))
+  seqs[1]<-1
+  col.matrix<-col.matrix[c(seqs), c(seqs)]}
+
+col.matrix<-colmat(nquantiles=10, upperleft="blue", upperright="yellow", bottomleft="green", bottomright="red", xlab="My x label", ylab="My y label")
+
+col.matrix<-colmat(nquantiles=4)
+
+## Bivariate map function
+### START COPYING HERE ###
+bivariate.map<-function(rasterx, rastery, colormatrix=col.matrix, nquantiles=10){
+  quanmean<-getValues(rasterx)
+  temp<-data.frame(quanmean, quantile=rep(NA, length(quanmean)))
+  brks<-with(temp, quantile(temp,na.rm=TRUE, probs = c(seq(0,1,1/nquantiles))))
+  r1<-within(temp, quantile <- cut(quanmean, breaks = brks, labels = 2:length(brks),include.lowest = TRUE))
+  quantr<-data.frame(r1[,2]) 
+  quanvar<-getValues(rastery)
+  temp<-data.frame(quanvar, quantile=rep(NA, length(quanvar)))
+  brks<-with(temp, quantile(temp,na.rm=TRUE, probs = c(seq(0,1,1/nquantiles))))
+  r2<-within(temp, quantile <- cut(quanvar, breaks = brks, labels = 2:length(brks),include.lowest = TRUE))
+  quantr2<-data.frame(r2[,2])
+  as.numeric.factor<-function(x) {as.numeric(levels(x))[x]}
+  col.matrix2<-colormatrix
+  cn<-unique(colormatrix)
+  for(i in 1:length(col.matrix2)){
+    ifelse(is.na(col.matrix2[i]),col.matrix2[i]<-1,col.matrix2[i]<-which(col.matrix2[i]==cn)[1])}
+  cols<-numeric(length(quantr[,1]))
+  for(i in 1:length(quantr[,1])){
+    a<-as.numeric.factor(quantr[i,1])
+    b<-as.numeric.factor(quantr2[i,1])
+    cols[i]<-as.numeric(col.matrix2[b,a])}
+  r<-rasterx
+  r[1:length(r)]<-cols
+  return(r)}
+
+
+# Plot bivariate maps -----------------------------------------------------
+
+my.colors = colorRampPalette(c("white","lightblue", "yellow","orangered", "red"))
+plot(r_prev_mean,frame.plot=F,axes=F,box=F,add=F,legend.width=.5,legend.shrink=.5,col=my.colors(255)) 
+# plot(st_geometry(m_0), add= T)
+
+plot(volv_conductance,frame.plot=F,axes=F,box=c("#D62F48CA", "#FFFFFF", "#FFFFFF"),add=F,legend.width=.5,legend.shrink=.5,col=my.colors(255)) 
+# plot(st_geometry(m_0), add= T)
+
+bivmap<-bivariate.map(r_prev_mean,volv_conductance, colormatrix=col.matrix, nquantiles=4)
+
+png(filename = "docs/220507_volvbivariate_index.png", width = 4, height = 4, units = "in", res= 1000, bg = "transparent")
+col.matrix<-colmat(nquantiles=4, upperleft="slateblue", upperright="firebrick2", 
+                   bottomleft="slategray", bottomright="salmon", xlab="Prevalence", ylab="Conductance" )
+dev.off()
+
+#B31212D4 - red
+#2F69D6CA - blue
+#F0842B5E - orange
+
+png(filename = "docs/220507_volvbivariate_map.png", width = 10, height = 5, units = "in", res= 1000, bg = "transparent")
+bivmap<-bivariate.map(r_prev_mean,volv_conductance, colormatrix=col.matrix, nquantiles=4)
+plot(bivmap,frame.plot=F,axes=F,box=F,add=F,legend=F,col=as.vector(col.matrix))
+# plot(st_geometry(m_0), add= T, lwd = 4)
+dev.off()
+
+c("#FF000033", "#FFFFFF", "#FFFFFF")
+c("#EBB9B9D6", "#E8A190", "#D12A2A")
+c("#F5C4C4", "#F29191", "#F58282", "#FA4141")
+c("#2A6EEB", "#6EA2F0", "#B8CCF2", "#ABC5F5") - Blues
+
+
+# Calculate correlation statistics between two rasters --------------------
+
+# devtools::install_github("jeffreyevans/spatialEco")
+library(spatialEco)
+library(rgdal)
+
+cor.test(values(r_prev_mean), values(volv_conductance))
+# cor: 0.4989441; 95 percent confidence interval: 0.4850048 0.5126300; p-value < 2.2e-16
+
+prev_mean_spg <- as(r_prev_mean, "SpatialGridDataFrame")
+volv_conductance_spg <- as(volv_conductance, "SpatialGridDataFrame")
+
+gridded(prev_mean_spg) 
+
+corr <- spatialEco::raster.modified.ttest(prev_mean_spg, volv_conductance_spg)  
+
+corr$moran.y %>% qplot
+corr$moran.x %>% qplot
+corr$corr %>% qplot
+corr$p.value %>% qplot
+
+corr_hist <- qplot(corr$corr) + xlab("Sliding window correlation coefficient") + 
+  ylab("Frequency") + theme_bw(base_family = "Arial", base_size = 16)
+# ggsave(plot = corr_hist, filename = "docs/220507_volv_corr_hist.png", device = "png", dpi = 1000, width = 5, height = 5, units = "in" )
+
+corr$corr %>% length()
+corr_50 <- data.frame(corr$corr) %>% dplyr::filter(corr.corr > .3)
+# 57.34 % corr coeff >.3
+
+```
+
+

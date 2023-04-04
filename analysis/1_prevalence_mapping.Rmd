@@ -10,11 +10,11 @@ output:
 ---
 
 ```{r setup, echo=FALSE}
-knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+knitr::opts_knit$set(root.dir = "C:/Users/19226876/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
 ```
 
 ## Introduction
-The data is obtained from [ESPEN database](https://espen.afro.who.int/tools-resources/download-data)
+The microfilarial prevalence data is obtained from [ESPEN database](https://espen.afro.who.int/tools-resources/download-data)
 
 ## Load libraries
 ```{r, message=FALSE}
