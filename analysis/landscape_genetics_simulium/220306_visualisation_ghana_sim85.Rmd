@@ -1,0 +1,180 @@
+---
+title: "Resistance surface optimisation"
+author: "Himal Shrestha"
+date: "06/03/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/Onchocerciasis/PhD/Genomics/Code/Project codes/220128_Ghana_simulium_analysis/")
+```
+
+# Aims
+
+-   prepare visualisation for publication
+
+## Load libraries, functions and data
+
+```{r}
+suppressMessages({
+  library(raster);
+  library(tidyverse);
+  library(RColorBrewer);
+  library(scales);
+  library(sf);
+  library(rgdal);
+  library(tmap);
+  library(ggplot2);
+  library(ggrepel);
+})
+```
+
+```{r}
+extrafont::loadfonts(device="win", quiet = TRUE)
+```
+
+```{r}
+ghana_LG <- readRDS("data/220304_GT_sim85LG.rds")
+ghana_GIS <- readRDS("../211028_Ghana_analysis/data/rds_transition_ghana.rds")
+
+ghana_sites_selected <- ghana_LG[[2]]
+coordinates(ghana_sites_selected) <- ghana_sites_selected[,c("coords.x1", "coords.x2")]
+covs_simulium <- stack("../../../Data/Ghana GIS/220228_cov_simulium.grd")
+covs_selected <- c("elevation", "isothermality", "SM1315_GT_utm", "FC_GT_utm", "annual_precpitation")
+
+covariates_selected <- covs_simulium[[covs_selected]]
+covariates_list <- aggregate(covariates_selected, fact = 2, fun = mean, na.rm = TRUE)
+
+# covariates_selected %>% values %>% summary()
+
+reynolds_fst <- ghana_LG[[1]]
+genetic_distance <- reynolds_fst/(1-reynolds_fst)
+geo_dist_GT <- ghana_LG[[3]]
+## Sample locations
+sample.coords <- as(ghana_sites_selected,"SpatialPoints")
+sample.coords_sf <- sample.coords %>% st_as_sf() %>% st_crs("+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+
+bbox_buffer <- ghana_GIS[[1]]
+
+explore_resurfaces  <-  stack("data/220206_sim85_resurfaces.grd")
+```
+
+```{r}
+ghana_map <- getData('GADM', country='GHA', level=0)
+ghana_map_sf <- ghana_map %>% st_as_sf()
+ghana_map_sf_utm <- ghana_map_sf %>% st_transform(crs = "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+```
+
+### Annual precipitation
+
+```{r}
+rdf <- rasterToPoints(covariates_selected[[5]]); rdf <- data.frame(rdf)
+colnames(rdf) <- c("X","Y","precip")
+
+p <- ggplot() + 
+  geom_raster(data = rdf, aes(X, Y, fill = precip)) + 
+  scale_fill_gradientn(name="Annual precipitation",colours = terrain.colors(20, rev = T))+
+  guides(fill = guide_colorbar()) +
+  scale_alpha(range = c(0, 0.5), guide = "none") +
+  coord_equal() +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0))  +
+  geom_sf(data = ghana_map_sf_utm, col = "black", lwd = 1, lty = 2, alpha = 0.01) +
+  # annotation_scale(location = "br", width_hint = 0.5) +
+  # annotation_north_arrow(location = "bl", which_north = "true", 
+  #       pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+  #       style = north_arrow_fancy_orienteering) +
+  # geom_sf(data = ghana_map_sf, col = "black", lwd = 1, lty = 2, alpha = 0.01) +
+  theme_bw(base_family = "Arial", base_size = 18) 
+
+ggsave(plot = p, filename = "docs/220303_precip.png", device = "png", dpi = 1000, width = 10, height = 5, units = "in" )
+```
+
+## Visualising resistance layers
+
+```{r}
+reproj2 <- function(tbc, c){
+  tbc <- crop(tbc,c)
+  tbc <- projectRaster(tbc, c)
+}
+```
+
+```{r}
+crs(explore_resurfaces) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+precip_resist <- explore_resurfaces[[1]] 
+
+resistance_layer <- reproj2(tbc = precip_resist, c = covariates_selected[[1]]) ## keep changing resistance surface in tbc
+
+rdf <- rasterToPoints(resistance_layer); rdf <- data.frame(rdf)
+colnames(rdf) <- c("X","Y","Resistance")
+
+pal_res <- colorRampPalette(rev(brewer.pal(8, name = "RdYlBu")), interpolate = "linear", space = "Lab")
+
+ghana_map_sf_utm <- ghana_map_sf %>% st_transform(crs = "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+p1 <- ggplot() + 
+  geom_raster(data = rdf, aes(X, Y, fill = Resistance)) + 
+  scale_fill_gradientn(name="Resistance", colours = pal_res(100))+
+  guides(fill = guide_colorbar()) +
+  scale_alpha(range = c(0, 0.5), guide = "none") +
+  coord_equal() + 
+  geom_sf(data = ghana_map_sf_utm, col = "black", lwd = 1, lty = 2, alpha = 0.01) +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0)) + theme_bw(base_family = "Arial", base_size = 18) # +
+  # annotation_scale(location = "br", width_hint = 0.5) +
+  # annotation_north_arrow(location = "bl", which_north = "true", 
+  #       pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+  #       style = north_arrow_fancy_orienteering)
+
+
+ggsave(plot = p1, filename = "docs/220306_sim85precip_resist.png", device = "png", dpi = 1000, width = 10, height = 5, units = "in" )
+```
+
+##### Connectivity map
+
+```{r}
+precip_current <- explore_resurfaces[[2]]
+precip_current <- reproj2(tbc = precip_current, c = covariates_selected[[1]]) 
+gene_flow <- rasterToPoints(precip_current); gene_flow <- data.frame(gene_flow)
+colnames(gene_flow) <- c("X","Y","Gene_flow")
+
+sp.dat <- as(ghana_sites_selected,"SpatialPoints") 
+proj4string(sp.dat) = CRS("+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+sp_dat_sf <- sp.dat %>% st_as_sf()
+
+# color palette for the geneflow map
+library(RColorBrewer)
+pal <- hcl.colors(n = 100, palette = "inferno")
+pal2 <- c(pal[seq(1,60, by = 3)], pal[60:100])
+
+p1 <- ggplot() + 
+  geom_raster(data = gene_flow, aes(X, Y, fill = Gene_flow)) + 
+  scale_fill_gradientn(name="Gene flow", colours = pal2)+
+  guides(fill = guide_colorbar()) +
+  scale_alpha(range = c(0, 0.5), guide = "none") +
+  coord_equal() + 
+  geom_sf(data = sp_dat_sf, col = "black", shape = 21, size = 2, alpha = 0.7, fill = "white") +
+  scale_y_continuous(name=expression(paste("Latitude (",degree,")")), limits=c(844163.2, 973742.2),expand=c(0,0))+
+  scale_x_continuous(name = expression(paste("Longitude (",degree,")")), limits=c(557641.1, 851721.1),expand=c(0,0)) +
+  # annotation_scale(location = "br", width_hint = 0.5) +
+  # annotation_north_arrow(location = "bl", which_north = "true", 
+  #       pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+  #       style = north_arrow_fancy_orienteering) + 
+  theme_void(base_family = "Verdana", base_size = 18) 
+
+
+ggsave(plot = p1, filename = "docs/220306_sim85_precipconnectivity_map.png", device = "png", dpi = 1000, width = 10, height = 5, units = "in" )
+```
+
+### Plotting resistance in interactive map
+
+```{r}
+tmap_mode("view")
+tm_shape(precip_current) + 
+  tm_raster(title="Current map", alpha = 0.5, palette = pal2, legend.is.portrait = T, style = "cont", midpoint = NA)
+```

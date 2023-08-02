@@ -1,0 +1,362 @@
+---
+title: "Selection of environmental covariates"
+author: "Himal Shrestha"
+date: "25/02/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/user/OneDrive - LA TROBE UNIVERSITY/Onchocerciasis/PhD/Genomics")
+```
+
+## Load libraries
+```{r}
+library(sp)
+library(raster)
+library(rgdal)
+library(tidyverse)
+library(sf)
+```
+## Get data
+
+```{r}
+utm_proj_ghana <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+```
+
+## Prepare data
+
+```{r}
+bbox_buffer <- as(raster::extent(557845.6, 851520.9, 844447.4, 973827), "SpatialPolygons") # dummy buffer made for cropping
+proj4string(bbox_buffer) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+```
+
+## Get a raster data
+```{r}
+files <- paste0("Data/Ghana GIS/earth engine/continuous/", list.files("Data/Ghana GIS/earth engine/continuous/"))
+files_cat <- paste0("Data/Ghana GIS/earth engine/categorical/", list.files("Data/Ghana GIS/earth engine/categorical/"))
+files_wpop <- paste0("Data/Ghana GIS/worldpop/", list.files("Data/Ghana GIS/worldpop"))
+files_map <- paste0("Data/Ghana GIS/MAP/", list.files("Data/Ghana GIS/MAP"))
+```
+### Functions for raster manipulation
+
+
+#### Elevation
+```{r}
+alt <- raster::getData(name = "alt", country = "GHA", mask = T)
+alt_ghana_utm <- projectRaster(alt, crs = utm_proj_ghana, method = "bilinear")
+crs(alt_ghana_utm)
+
+alt_GT_utm <- crop(alt_ghana_utm, bbox_buffer)
+names(alt_GT_utm) <- "elevation"
+```
+
+#### World clim variables
+- More infor about (world clim variables)[https://worldclim.org/data/v1.4/formats.html]
+```{r}
+# wc_1 <- raster::getData("worldclim", var = "bio", res = 0.5, lon = 0, lat = 8) # 1km resolution
+# wc_2 <- raster::getData("worldclim", var = "bio", res = 0.5, lon = -0.9, lat = 8) # 1km resolution
+# system.time(wc <- raster::merge(wc_1, wc_2)) # takes 8 mins to run
+
+# writeRaster(wc, filename = "Data/Ghana GIS/220228_worldclim_largemerged.grd", overwrite = F)
+
+wc2 <- stack("Data/Ghana GIS/220228_worldclim_largemerged.grd")
+wc_GT_wgs84 <- crop(wc, extent(alt)) 
+wc_GT_utm <- projectRaster(wc_GT_wgs84, crs = utm_proj_ghana, method = "bilinear")
+wc_GT_utm <- crop(wc_GT_utm, bbox_buffer)
+wc_GT_utm <- projectRaster(wc_GT_utm, alt_GT_utm)
+
+names(wc_GT_utm) <- c("annual_mean_temperature", "annual_diurnal_range", "isothermality", "temperature_seasonality", "maximum_temperature_warmest_month", "minimum_temperature_coldest_month", "temperature_annual_range", "mean_temperature_wettest_quarter", "mean_temperature_driest_quarter", "mean_temperature_warmest_quarter", "mean_temperature_coldest_quarter", "annual_precpitation", "precipitation_wettest_month", "precipitation_driest_month", "precipitation_seasonality", "precipitation_wettest_quarter", "precipitation_dreist_quarter", "precipitation_warmest_quarter", "precipitation_coldest_quarter")
+```
+
+#### Land surface temperature
+- 1 km: 2010-2012
+- MOD11A1.006 Terra Land Surface Temperature and Emissivity Daily Global 1km
+- Unit: K, the scale is 0.02
+```{r}
+surf_temp_ghana <- stack(files[13])
+surf_temp_ghana_1km <- surf_temp_ghana[[c(1,5)]]
+
+LST_ghana_utm <- projectRaster(surf_temp_ghana_1km, crs = utm_proj_ghana, method = "bilinear")
+LST1012_GT_utm <- crop(LST_ghana_utm, bbox_buffer)
+LST1012_GT_utm <- projectRaster(LST1012_GT_utm, alt_GT_utm)
+
+## Convert Kelvin to degree celsius
+LST1012_GT_utm <- LST1012_GT_utm*0.02 - 273.15
+names(LST1012_GT_utm) <- c("LST_day_1012", "LST_night_1012")
+```
+- 1 km: 2000-2001
+- MOD11A1.006 Terra Land Surface Temperature and Emissivity Daily Global 1km
+```{r}
+surf_temp_ghana01 <- stack(files[17])
+surf_temp_ghana01_1km <- surf_temp_ghana[[c(1,5)]]
+
+LST01_ghana_utm <- projectRaster(surf_temp_ghana01_1km, crs = utm_proj_ghana, method = "bilinear")
+LST01_GT_utm <- crop(LST_ghana_utm, bbox_buffer)
+LST01_GT_utm <- projectRaster(LST01_GT_utm, alt_GT_utm)
+
+## Convert Kelvin to degree celsius
+LST01_GT_utm <- LST01_GT_utm*0.02 - 273.15
+names(LST01_GT_utm) <- c("LST_day_01", "LST_night_01")
+```
+
+- 1 km: 2010-2012
+- MOD11A1.006 Terra Land Surface Temperature and Emissivity Daily Global 1km
+```{r}
+surf_temp_ghana1315 <- stack(files[18])
+surf_temp_ghana1315_1km <- surf_temp_ghana1315[[c(1,5)]]
+
+LST1315_ghana_utm <- projectRaster(surf_temp_ghana1315_1km, crs = utm_proj_ghana, method = "bilinear")
+LST1315_GT_utm <- crop(LST1315_ghana_utm, bbox_buffer)
+LST1315_GT_utm <- projectRaster(LST1315_GT_utm, alt_GT_utm)
+
+## Convert Kelvin to degree celsius
+LST1315_GT_utm <- LST1315_GT_utm*0.02 - 273.15
+names(LST1315_GT_utm) <- c("LST_day_1315", "LST_night_1315")
+```
+#### Slope
++ Unit in degrees
++ 2000 - CGIAR SRTM
+```{r}
+slope_GT_utm <- terrain(alt_GT_utm, unit = "degrees") # unit is degrees
+names(slope_GT_utm) <- c("slope")
+```
+
+#### Vegetation indices
++ MOD13A2.006 Terra Vegetation Indices 16-Day Global 1km
++ 1 km
++ Scale: 0.0001
+##### NDVI
+```{r}
+ghana_NDVI <- stack(files[22:24])
+
+ghana_NDVI_utm <- projectRaster(ghana_NDVI, crs = utm_proj_ghana, method = "bilinear")
+NDVI_GT_utm <- crop(ghana_NDVI_utm, bbox_buffer)
+NDVI_GT_utm <- projectRaster(NDVI_GT_utm, alt_GT_utm)
+
+## Rescale NDVI
+NDVI_GT_utm <- NDVI_GT_utm*0.0001
+names(NDVI_GT_utm) <- c("NDVI01_GT_utm", "NDVI1012_GT_utm", "NDVI1315_GT_utm")
+NDVI01_GT_utm <- NDVI_GT_utm[["NDVI01_GT_utm"]]
+NDVI1012_GT_utm <- NDVI_GT_utm[["NDVI1012_GT_utm"]]
+NDVI1315_GT_utm <- NDVI_GT_utm[["NDVI1315_GT_utm"]]
+```
+
+##### EVI
+```{r}
+ghana_EVI <- stack(files[19:21])
+
+ghana_EVI_utm <- projectRaster(ghana_EVI, crs = utm_proj_ghana, method = "bilinear")
+EVI_GT_utm <- crop(ghana_EVI_utm, bbox_buffer)
+EVI_GT_utm <- projectRaster(EVI_GT_utm, alt_GT_utm)
+
+## Rescale EVI
+EVI_GT_utm <- EVI_GT_utm*0.0001
+names(EVI_GT_utm) <- c("EVI01_GT_utm", "EVI1012_GT_utm", "EVI1315_GT_utm")
+EVI01_GT_utm <- EVI_GT_utm[["EVI01_GT_utm"]]
+EVI1012_GT_utm <- EVI_GT_utm[["EVI1012_GT_utm"]]
+EVI1315_GT_utm <- EVI_GT_utm[["EVI1315_GT_utm"]]
+```
+
+##### Land Cover
++ 5km source; 1km when downloaded
++ MCD12Q1.006 MODIS Land Cover Type Yearly Global 500m
++ LC_Type1 selected with 17 categories
+
+```{r}
+ghana_LC <- stack(files[25:27])
+
+ghana_LC_utm <- projectRaster(ghana_LC, crs = utm_proj_ghana, method = "ngb")
+LC_GT_utm <- crop(ghana_LC_utm, bbox_buffer)
+LC_GT_utm <- projectRaster(LC_GT_utm, alt_GT_utm, method = "ngb")
+
+
+names(LC_GT_utm) <- c("LC01_GT_utm", "LC1012_GT_utm", "LC1315_GT_utm")
+LC01_GT_utm <- LC_GT_utm[["LC01_GT_utm"]]
+LC1012_GT_utm <- LC_GT_utm[["LC1012_GT_utm"]]
+LC1315_GT_utm <- LC_GT_utm[["LC1315_GT_utm"]]
+```
+
+#### HYDROSHEDs data
+##### Flow accumulation
++ All from 2000
++ 1 km
+```{r}
+FC_ghana <- stack(files[3])
+
+FC_ghana_utm <- projectRaster(FC_ghana, crs = utm_proj_ghana, method = "bilinear")
+FC_GT_utm <- crop(FC_ghana_utm, bbox_buffer)
+FC_GT_utm <- projectRaster(FC_GT_utm, alt_GT_utm)
+names(FC_GT_utm) <- c("FC_GT_utm")
+```
+##### Drain direction
++ Categorical
++ 1 km all from 2000
++ I do not think this really matters
+```{r}
+drain_ghana <- stack(files[28])
+
+drain_ghana_utm <- projectRaster(drain_ghana, crs = utm_proj_ghana, method = "ngb")
+drain_GT_utm <- crop(drain_ghana_utm, bbox_buffer)
+drain_GT_utm <- projectRaster(drain_GT_utm, alt_GT_utm, method = "ngb")
+names(drain_GT_utm) <- c("drain_GT_utm")
+```
+
+#### Wetness index
++ Taselled cap wetness index
++ Oxford MAP
++ 5 km
++ 2001 - 2015
+
+```{r}
+ghana_TCW <- stack(files[c(29, 16, 30)])
+
+ghana_TCW_utm <- projectRaster(ghana_TCW, crs = utm_proj_ghana, method = "bilinear")
+TCW_GT_utm <- crop(ghana_TCW_utm, bbox_buffer)
+TCW_GT_utm <- projectRaster(TCW_GT_utm, alt_GT_utm, method = "bilinear")
+
+
+names(TCW_GT_utm) <- c("TCW01_GT_utm", "TCW1012_GT_utm", "TCW1315_GT_utm")
+TCW01_GT_utm <- TCW_GT_utm[["TCW01_GT_utm"]]
+TCW1012_GT_utm <- TCW_GT_utm[["TCW1012_GT_utm"]]
+TCW1315_GT_utm <- TCW_GT_utm[["TCW1315_GT_utm"]]
+```
+
+#### Soil moisture
++ Use this: TerraClimate: Monthly Climate and Climatic Water Balance for Global Terrestrial Surfaces, University of Idaho
++ 5 km
++ scale: 0.1
+
+```{r}
+ghana_SM <- stack(files[c(31:33)])
+
+ghana_SM_utm <- projectRaster(ghana_SM, crs = utm_proj_ghana, method = "bilinear")
+SM_GT_utm <- crop(ghana_SM_utm, bbox_buffer)
+SM_GT_utm <- projectRaster(SM_GT_utm, alt_GT_utm, method = "bilinear")
+
+## rescale to mm
+SM_GT_utm <- SM_GT_utm * 0.1
+
+names(SM_GT_utm) <- c("SM0001_GT_utm", "SM1012_GT_utm", "SM1315_GT_utm")
+SM01_GT_utm <- SM_GT_utm[["SM0001_GT_utm"]]
+SM1012_GT_utm <- SM_GT_utm[["SM1012_GT_utm"]]
+SM1315_GT_utm <- SM_GT_utm[["SM1315_GT_utm"]]
+```
+
+
+#### Distance to the nearest river - DIVA
+- DIVA GIS 
+- 1km
+```{r}
+distwater_ghana <- stack("Data/Ghana GIS/220224_FT_dist_river_1kmsq.tif")
+
+distwater_GT_utm <- projectRaster(distwater_ghana, alt_GT_utm, method = "bilinear")
+
+# change m to km
+distwater_GT_utm <- distwater_GT_utm/1000
+
+names(distwater_GT_utm) <- c("distwater_GT_utm")
+```
+
+#### Socio-demographic variables
+##### Population density
++ UN- adjusted
++ 100 m
+```{r}
+ghana_popden <- stack(files[c(34:36)])
+
+ghana_popden_utm <- projectRaster(ghana_popden, crs = utm_proj_ghana, method = "bilinear")
+popden_GT_utm <- crop(ghana_popden_utm, bbox_buffer)
+popden_GT_utm <- projectRaster(popden_GT_utm, alt_GT_utm, method = "bilinear")
+
+
+names(popden_GT_utm) <- c("popden0001_GT_utm", "popden1012_GT_utm", "popden1315_GT_utm")
+popden0001_GT_utm <- popden_GT_utm[["popden0001_GT_utm"]]
+popden1012_GT_utm <- popden_GT_utm[["popden1012_GT_utm"]]
+popden1315_GT_utm <- popden_GT_utm[["popden1315_GT_utm"]]
+```
+
+
+##### Improved housing prevalence
++ 
+```{r}
+ghana_housing <- stack(files_map[c(6,7)])
+
+ghana_housing_utm <- projectRaster(ghana_housing, crs = utm_proj_ghana, method = "bilinear")
+housing_GT_utm <- crop(ghana_housing_utm, bbox_buffer)
+housing_GT_utm <- projectRaster(housing_GT_utm, alt_GT_utm, method = "bilinear")
+
+# mean of 2000 and 15 for parasite genetics data
+housing_GT_utm_2 <- stack(housing_GT_utm[[1]], mean(housing_GT_utm[[1]], housing_GT_utm[[2]]), housing_GT_utm[[2]])
+
+
+names(housing_GT_utm_2) <- c("housing2001_GT_utm", "housing0115_GT_utm", "housing2015_GT_utm")
+
+housing2001_GT_utm <- housing_GT_utm_2[["housing2001_GT_utm"]]
+housing0115_GT_utm <- housing_GT_utm_2[["housing0115_GT_utm"]]
+housing2015_GT_utm <- housing_GT_utm_2[["housing2015_GT_utm"]]
+```
+
+
+##### Accessibility to the nearest cities
++ Only 2015 layer which is deprecated
+
+##### Distance to the nearest road
++ 2016
++ Maybe we can use this for simulium 
++ 100 m
+```{r}
+distraod16_ghana <- stack(files_wpop[[2]])
+## convert to 1 km
+distraod16_ghana_1km <- aggregate(distraod16_ghana, fact=10, fun=mean)
+
+distraod16_ghana_utm <- projectRaster(distraod16_ghana_1km, crs = utm_proj_ghana, method = "bilinear")
+distraod16_GT_utm <- crop(distraod16_ghana_utm, bbox_buffer)
+distraod16_GT_utm <- projectRaster(distraod16_GT_utm, alt_GT_utm, method = "bilinear")
+
+
+names(distraod16_GT_utm) <- c("distraod16_GT_utm")
+```
+
+##### Night lights
++ stable lights band: ephemeral light source like as fire removed
++ 0 - 63: no unit
++ 1 km resolution: from 1992 to 2013
++ Band of 2000-01, 2010-12 and 2013 created
+```{r}
+ghana_nightlights <- stack(files[c(37:39)])
+
+ghana_nightlights_utm <- projectRaster(ghana_nightlights, crs = utm_proj_ghana, method = "bilinear")
+nightlights_GT_utm <- crop(ghana_nightlights_utm, bbox_buffer)
+nightlights_GT_utm <- projectRaster(nightlights_GT_utm, alt_GT_utm, method = "bilinear")
+
+
+names(nightlights_GT_utm) <- c("nightlights0001_GT_utm", "nightlights1012_GT_utm", "nightlights13_GT_utm")
+nightlights0001_GT_utm <- nightlights_GT_utm[["nightlights0001_GT_utm"]]
+nightlights1012_GT_utm <- nightlights_GT_utm[["nightlights1012_GT_utm"]]
+nightlights13_GT_utm <- nightlights_GT_utm[["nightlights13_GT_utm"]]
+```
+
+
+
+## Preparing stack of covariates
+```{r}
+stack_for_prev <- stack(alt_GT_utm, wc_GT_utm, LST01_GT_utm, slope_GT_utm, NDVI01_GT_utm, EVI01_GT_utm, LC01_GT_utm, FC_GT_utm, TCW01_GT_utm, SM01_GT_utm, distwater_GT_utm, popden0001_GT_utm, housing2001_GT_utm, nightlights0001_GT_utm)
+
+stack_for_volvulus <- stack(alt_GT_utm, wc_GT_utm, LST1012_GT_utm, slope_GT_utm, NDVI1012_GT_utm, EVI1012_GT_utm, LC1012_GT_utm, FC_GT_utm, TCW1012_GT_utm, SM1012_GT_utm, distwater_GT_utm, popden1012_GT_utm, housing0115_GT_utm, nightlights1012_GT_utm)
+
+stack_for_simulium <- stack(alt_GT_utm, wc_GT_utm, LST1315_GT_utm, slope_GT_utm, NDVI1315_GT_utm, EVI1315_GT_utm, LC1315_GT_utm, FC_GT_utm, TCW1315_GT_utm, SM1315_GT_utm, distwater_GT_utm, popden1315_GT_utm, housing2015_GT_utm, distraod16_GT_utm, nightlights13_GT_utm)
+```
+
+## Exporting raster
+```{r, eval = F}
+# writeRaster(stack_for_prev, filename = "Data/Ghana GIS/220228_cov_prev.grd", overwrite = F)
+# writeRaster(stack_for_volvulus, filename = "Data/Ghana GIS/220228_cov_volvulus.grd", overwrite = F)
+# writeRaster(stack_for_simulium, filename = "Data/Ghana GIS/220228_cov_simulium.grd", overwrite = F)
+```
+
+```{r}
+stack_for_prev_2 <- stack("Data/Ghana GIS/220228_cov_prev.grd")
+```
+

@@ -1,5 +1,5 @@
-"","SN","Community","pop_id","X","Y","num_samples"
-"1",1,"Agbelekame","AGB",-2.210722,8.242361,20
-"2",2,"Fowman-Banda","FOW",-2.244722,8.119667,19
-"3",3,"Asubende","ASU",-0.981444,8.016778,26
-"4",4,"Wiae","WIA",-0.144472,8.286056,20
+SN,Community,pop_id,X,Y,num_samples
+1,Agbelekame,AGB,-2.210722,8.242361,20
+2,Fowman-Banda,FOW,-2.244722,8.119667,19
+3,Asubende,ASU,-0.981444,8.016778,26
+4,Wiae,WIA,-0.144472,8.286056,20

@@ -1,0 +1,1921 @@
+---
+title: "Exploring resistance surfaces for Simulium"
+author: "Himal Shrestha"
+date: "04/03/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/Onchocerciasis/PhD/Genomics/Code/Project codes/220128_Ghana_simulium_analysis/")
+```
+
+# Aims
+- Import optimised resistance surfaces and test if they are significant
+- Create current maps
+
+## Load libraries, functions and data
+
+```{r}
+library(raster)
+library(ResistanceGA)
+library(sf)
+library(RColorBrewer)
+library(tmap)
+library(ggplot2)
+library(tictoc)
+library(graph4lg)
+library(gdistance)
+library(vegan)
+library(PopGenReport)
+library(graph4lg)
+library("parallel")
+library("doParallel")
+library(rgdal)
+library(spatialEco)
+library(climateStability)
+library(tidyverse)
+```
+
+```{r, echo = FALSE, warning=TRUE, message=FALSE}
+extrafont::loadfonts(device="win", quiet = T)
+```
+
+## Load data
+```{r}
+ghana_LG <- readRDS("data/220304_GT_sim85LG.rds")
+
+ghana_sites_selected <- ghana_LG[[2]]
+coordinates(ghana_sites_selected) <- ghana_sites_selected[,c("coords.x1", "coords.x2")]
+covs_simulium <- stack("../../../Data/Ghana GIS/220228_cov_simulium.grd")
+covs_selected <- c("elevation", "isothermality", "SM1315_GT_utm", "FC_GT_utm", "annual_precpitation")
+
+covariates_selected <- covs_simulium[[covs_selected]]
+covariates_list <- aggregate(covariates_selected, fact = 2, fun = mean, na.rm = TRUE)
+
+# covariates_selected %>% values %>% summary()
+
+reynolds_fst <- ghana_LG[[1]]
+genetic_distance <- reynolds_fst/(1-reynolds_fst)
+geo_dist_GT <- ghana_LG[[3]]
+## Sample locations
+sample.coords <- as(ghana_sites_selected,"SpatialPoints")
+```
+
+### Visualise
+06 Mar, 2022
+```{r}
+# Get lower triangle of the correlation matrix
+  get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+```
+#### Lin Fst
+```{r}
+upper_tri <- get_upper_tri(genetic_distance)
+upper_tri
+melted_cormat <- melt(upper_tri, na.rm = TRUE) %>% mutate(across(where(is.numeric), round, 3))
+ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", 
+  limit = c(0,.40), space = "Lab", 
+   name="Genetic distance: Pairwise Fst Linearised") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+p_fst <- ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+
+# ggsave(plot = p_fst, filename = "docs/220306_linFst_parasite.png", device = "png", dpi = 1000, width = 6, height = 6, units = "in" )
+```
+
+#### Geodist
+```{r}
+upper_tri <- get_upper_tri(geo_dist_GT)
+upper_tri
+melted_cormat <- melt(upper_tri, na.rm = TRUE) %>% mutate(across(where(is.numeric), round, 1))
+ggheatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", 
+  limit = c(0,245), space = "Lab", 
+   name="Geographic distance (km)") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+p_geo <- ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+
+# ggsave(plot = p_geo, filename = "docs/220306_geodist_sim.png", device = "png", dpi = 1000, width = 6, height = 6, units = "in" )
+```
+
+#### Mantel
+```{r}
+IBD_mantel <- mantel(xdis = as.dist(geo_dist_GT), ydis = as.dist(genetic_distance), permutations = 10000)
+p <- scatter_dist(mat_gd = genetic_distance, mat_ld = geo_dist_GT, pts_col = "black", method = "lm") + theme_bw(base_size = 12, base_family = "Arial") + xlab("Geographic distance (km)") + ylab("Genetic distance") # ylab(expression(F[st]/(1-F[st])))
+p <- p + annotate("text", x = 120, y = 0.09, label = paste0("Significance = ", round(IBD_mantel$signif,3))) + annotate("text", x = 120, y = 0.095, label = paste0("Mantel statistic r = ", round(IBD_mantel$statistic,3)))
+# ggsave(plot = p, filename = "Docs/220306_fst_geodist_mantel.png", device = "png", dpi = 100, width = 6, height = 5, units = "in" )
+```
+
+- prepare for Julia call
+```{r}
+JULIA_HOME = 'C:/Users/User/AppData/Local/Programs/Julia-1.6.1/bin'
+
+jl.inputs <- jl.prep(n.Pops = length(sample.coords),
+                     response = lower(genetic_distance),
+                     CS_Point.File = sample.coords,
+                     cholmod = T,
+                     JULIA_HOME = JULIA_HOME
+)
+```
+### Load functions
++ Generate the circuit distance -------------------------------------------
++ https://stackoverflow.com/questions/56387581/converting-a-vector-in-r-into-a-lower-upper-triangular-matrix-in-specific-order
+
+```{r}
+circuit_matrix <- function(current){
+  mat <- matrix(0, nrow = 4, ncol = 4)
+  mat[lower.tri(mat, diag = FALSE)] <- current
+  mat <- mat + t(mat)
+  colnames(mat) <- rownames(mat) <- ghana_sites_selected$code
+  return(mat)
+}
+```
+
+
+## Explore ResistanceGA output
++ create dataframe to store output
+```{r}
+output_df <- data.frame(variables = rep(c("Elevation", "Iso thermality", "Soil moisture", "Flow accumulation", "Precipitation"), times = c(4,4,4,4,4)),
+                        replicates = rep(1:4, times = 5),
+                        mantel_r = NA,
+                        mantel_p = NA,
+                        lgMMRR_p = NA,
+                        lgMMRR_r2 = NA,
+                        pmantel_r = NA,
+                        pmantel_p = NA)
+```
+
+### Elevation
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev1_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev1_circuit_distance <- Run_CS.jl(jl.inputs, elev1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev1_circuit_matrix <- circuit_matrix(current = elev1_circuit_distance)
+
+# cumulative current map
+elev1_current <- Run_CS.jl(jl.inputs, elev1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev1_mantel <- mantel(as.dist(genetic_distance), as.dist(elev1_circuit_matrix), permutations = 10000)
+output_df[1, 3:4] <- c(elev1_mantel$statistic, elev1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev1_cost <-  list(elev1_circuit_matrix)
+names(elev1_cost) <- c("elevation")
+set.seed(12345)
+elev1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[1, 5:6] <- c(elev1_lgMMRR$mmrr.tab$tpvalue[1],elev1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+elev1_pmantel <- mantel.partial(xdis = as.dist(elev1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[1, 7:8] <- c(elev1_pmantel$statistic, elev1_pmantel$signif)
+```
+
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev2_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev2_circuit_distance <- Run_CS.jl(jl.inputs, elev2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev2_circuit_matrix <- circuit_matrix(current = elev2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev2_current <- Run_CS.jl(jl.inputs, elev2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev2_mantel <- mantel(as.dist(genetic_distance), as.dist(elev2_circuit_matrix), permutations = 10000)
+output_df[2, 3:4] <- c(elev2_mantel$statistic, elev2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev2_cost <-  list(elev2_circuit_matrix)
+names(elev2_cost) <- c("elevation")
+set.seed(12345)
+elev2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[2, 5:6] <- c(elev2_lgMMRR$mmrr.tab$tpvalue[1],elev2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+elev2_pmantel <- mantel.partial(xdis = as.dist(elev2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[2, 7:8] <- c(elev2_pmantel$statistic, elev2_pmantel$signif)
+```
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev3_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev3_circuit_distance <- Run_CS.jl(jl.inputs, elev3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev3_circuit_matrix <- circuit_matrix(current = elev3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev3_current <- Run_CS.jl(jl.inputs, elev3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev3_mantel <- mantel(as.dist(genetic_distance), as.dist(elev3_circuit_matrix), permutations = 10000)
+output_df[3, 3:4] <- c(elev3_mantel$statistic, elev3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev3_cost <-  list(elev3_circuit_matrix)
+names(elev3_cost) <- c("elevation")
+set.seed(12345)
+elev3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[3, 5:6] <- c(elev3_lgMMRR$mmrr.tab$tpvalue[1],elev3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+elev3_pmantel <- mantel.partial(xdis = as.dist(elev3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[3, 7:8] <- c(elev3_pmantel$statistic, elev3_pmantel$signif)
+```
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[1],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+elev4_resist <- raster(paste0(read.dir,"Results/elevation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+elev4_circuit_distance <- Run_CS.jl(jl.inputs, elev4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+elev4_circuit_matrix <- circuit_matrix(current = elev4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+elev4_current <- Run_CS.jl(jl.inputs, elev4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+elev4_mantel <- mantel(as.dist(genetic_distance), as.dist(elev4_circuit_matrix), permutations = 10000)
+output_df[4, 3:4] <- c(elev4_mantel$statistic, elev4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+elev4_cost <-  list(elev4_circuit_matrix)
+names(elev4_cost) <- c("elevation")
+set.seed(12345)
+elev4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = elev4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[4, 5:6] <- c(elev4_lgMMRR$mmrr.tab$tpvalue[1],elev4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+elev4_pmantel <- mantel.partial(xdis = as.dist(elev4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[4, 7:8] <- c(elev4_pmantel$statistic, elev4_pmantel$signif)
+```
+
+### Isothermality
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+ITM1_resist <- raster(paste0(read.dir,"Results/isothermality.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+ITM1_circuit_distance <- Run_CS.jl(jl.inputs, ITM1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+ITM1_circuit_matrix <- circuit_matrix(current = ITM1_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+ITM1_current <- Run_CS.jl(jl.inputs, ITM1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+ITM1_mantel <- mantel(as.dist(genetic_distance), as.dist(ITM1_circuit_matrix), permutations = 10000)
+output_df[5, 3:4] <- c(ITM1_mantel$statistic, ITM1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+ITM1_cost <-  list(ITM1_circuit_matrix)
+names(ITM1_cost) <- c("isothermality")
+set.seed(12345)
+ITM1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = ITM1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[5, 5:6] <- c(ITM1_lgMMRR$mmrr.tab$tpvalue[1],ITM1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+ITM1_pmantel <- mantel.partial(xdis = as.dist(ITM1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[5, 7:8] <- c(ITM1_pmantel$statistic, ITM1_pmantel$signif)
+```
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+ITM2_resist <- raster(paste0(read.dir,"Results/isothermality.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+ITM2_circuit_distance <- Run_CS.jl(jl.inputs, ITM2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+ITM2_circuit_matrix <- circuit_matrix(current = ITM2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+ITM2_current <- Run_CS.jl(jl.inputs, ITM2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+ITM2_mantel <- mantel(as.dist(genetic_distance), as.dist(ITM2_circuit_matrix), permutations = 10000)
+output_df[6, 3:4] <- c(ITM2_mantel$statistic, ITM2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+ITM2_cost <-  list(ITM2_circuit_matrix)
+names(ITM2_cost) <- c("isothermality")
+set.seed(12345)
+ITM2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = ITM2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[6, 5:6] <- c(ITM2_lgMMRR$mmrr.tab$tpvalue[1],ITM2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+ITM2_pmantel <- mantel.partial(xdis = as.dist(ITM2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[6, 7:8] <- c(ITM2_pmantel$statistic, ITM2_pmantel$signif)
+```
+
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+ITM3_resist <- raster(paste0(read.dir,"Results/isothermality.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+ITM3_circuit_distance <- Run_CS.jl(jl.inputs, ITM3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+ITM3_circuit_matrix <- circuit_matrix(current = ITM3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+ITM3_current <- Run_CS.jl(jl.inputs, ITM3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+ITM3_mantel <- mantel(as.dist(genetic_distance), as.dist(ITM3_circuit_matrix), permutations = 10000)
+output_df[7, 3:4] <- c(ITM3_mantel$statistic, ITM3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+ITM3_cost <-  list(ITM3_circuit_matrix)
+names(ITM3_cost) <- c("isothermality")
+set.seed(12345)
+ITM3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = ITM3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[7, 5:6] <- c(ITM3_lgMMRR$mmrr.tab$tpvalue[1],ITM3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+ITM3_pmantel <- mantel.partial(xdis = as.dist(ITM3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[7, 7:8] <- c(ITM3_pmantel$statistic, ITM3_pmantel$signif)
+```
+
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[2],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+ITM4_resist <- raster(paste0(read.dir,"Results/isothermality.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+ITM4_circuit_distance <- Run_CS.jl(jl.inputs, ITM4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+ITM4_circuit_matrix <- circuit_matrix(current = ITM4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+ITM4_current <- Run_CS.jl(jl.inputs, ITM4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+ITM4_mantel <- mantel(as.dist(genetic_distance), as.dist(ITM4_circuit_matrix), permutations = 10000)
+output_df[8, 3:4] <- c(ITM4_mantel$statistic, ITM4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+ITM4_cost <-  list(ITM4_circuit_matrix)
+names(ITM4_cost) <- c("isothermality")
+set.seed(12345)
+ITM4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = ITM4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[8, 5:6] <- c(ITM4_lgMMRR$mmrr.tab$tpvalue[1],ITM4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+ITM4_pmantel <- mantel.partial(xdis = as.dist(ITM4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[8, 7:8] <- c(ITM4_pmantel$statistic, ITM4_pmantel$signif)
+```
+
++ Replicate 2 best
+```{r}
+# ITM_conductance <- raster.invert(ITM2_resist)
+# ITM_conductance_rescaled <- rescale0to1(ITM_conductance)
+```
+
+### Soil moisture
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+SM1_resist <- raster(paste0(read.dir,"Results/SM1315_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+SM1_circuit_distance <- Run_CS.jl(jl.inputs, SM1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+SM1_circuit_matrix <- circuit_matrix(current = SM1_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+SM1_current <- Run_CS.jl(jl.inputs, SM1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+SM1_mantel <- mantel(as.dist(genetic_distance), as.dist(SM1_circuit_matrix), permutations = 10000)
+output_df[9, 3:4] <- c(SM1_mantel$statistic, SM1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+SM1_cost <-  list(SM1_circuit_matrix)
+names(SM1_cost) <- c("soil moisture")
+set.seed(12345)
+SM1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = SM1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[9, 5:6] <- c(SM1_lgMMRR$mmrr.tab$tpvalue[1],SM1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+SM1_pmantel <- mantel.partial(xdis = as.dist(SM1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[9, 7:8] <- c(SM1_pmantel$statistic, SM1_pmantel$signif)
+```
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+SM2_resist <- raster(paste0(read.dir,"Results/SM1315_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+SM2_circuit_distance <- Run_CS.jl(jl.inputs, SM2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+SM2_circuit_matrix <- circuit_matrix(current = SM2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+SM2_current <- Run_CS.jl(jl.inputs, SM2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+SM2_mantel <- mantel(as.dist(genetic_distance), as.dist(SM2_circuit_matrix), permutations = 10000)
+output_df[10, 3:4] <- c(SM2_mantel$statistic, SM2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+SM2_cost <-  list(SM2_circuit_matrix)
+names(SM2_cost) <- c("soil moisture")
+set.seed(12345)
+SM2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = SM2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[10, 5:6] <- c(SM2_lgMMRR$mmrr.tab$tpvalue[1],SM2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+SM2_pmantel <- mantel.partial(xdis = as.dist(SM2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[10, 7:8] <- c(SM2_pmantel$statistic, SM2_pmantel$signif)
+```
+
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+SM3_resist <- raster(paste0(read.dir,"Results/SM1315_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+SM3_circuit_distance <- Run_CS.jl(jl.inputs, SM3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+SM3_circuit_matrix <- circuit_matrix(current = SM3_circuit_distance)
+```
+
+```{R}
+# cumulative current map
+SM3_current <- Run_CS.jl(jl.inputs, SM3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+SM3_mantel <- mantel(as.dist(genetic_distance), as.dist(SM3_circuit_matrix), permutations = 10000)
+output_df[11, 3:4] <- c(SM3_mantel$statistic, SM3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+SM3_cost <-  list(SM3_circuit_matrix)
+names(SM3_cost) <- c("soil moisture")
+set.seed(12345)
+SM3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = SM3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[11, 5:6] <- c(SM3_lgMMRR$mmrr.tab$tpvalue[1],SM3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+SM3_pmantel <- mantel.partial(xdis = as.dist(SM3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[11, 7:8] <- c(SM3_pmantel$statistic, SM3_pmantel$signif)
+```
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[3],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+SM4_resist <- raster(paste0(read.dir,"Results/SM1315_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+SM4_circuit_distance <- Run_CS.jl(jl.inputs, SM4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+SM4_circuit_matrix <- circuit_matrix(current = SM4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+SM4_current <- Run_CS.jl(jl.inputs, SM4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+SM4_mantel <- mantel(as.dist(genetic_distance), as.dist(SM4_circuit_matrix), permutations = 10000)
+output_df[12, 3:4] <- c(SM4_mantel$statistic, SM4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+SM4_cost <-  list(SM4_circuit_matrix)
+names(SM4_cost) <- c("soil moisture")
+set.seed(12345)
+SM4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = SM4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[12, 5:6] <- c(SM4_lgMMRR$mmrr.tab$tpvalue[1],SM4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+SM4_pmantel <- mantel.partial(xdis = as.dist(SM4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[12, 7:8] <- c(SM4_pmantel$statistic, SM4_pmantel$signif)
+```
++ Replicate 3 is the best surface
+```{r}
+SM_conductance <- raster.invert(SM3_resist)
+SM_conductance_rescaled <- rescale0to1(SM_conductance)
+```
+
+### Flow accumulation
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FC1_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FC1_circuit_distance <- Run_CS.jl(jl.inputs, FC1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FC1_circuit_matrix <- circuit_matrix(current = FC1_circuit_distance)
+```
+
+
+```{r}
+# cumulative current map
+FC1_current <- Run_CS.jl(jl.inputs, FC1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+FC1_mantel <- mantel(as.dist(genetic_distance), as.dist(FC1_circuit_matrix), permutations = 10000)
+output_df[13, 3:4] <- c(FC1_mantel$statistic, FC1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+FC1_cost <-  list(FC1_circuit_matrix)
+names(FC1_cost) <- c("Flow accumulation")
+set.seed(12345)
+FC1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FC1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[13, 5:6] <- c(FC1_lgMMRR$mmrr.tab$tpvalue[1],FC1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+FC1_pmantel <- mantel.partial(xdis = as.dist(FC1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[13, 7:8] <- c(FC1_pmantel$statistic, FC1_pmantel$signif)
+```
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FC2_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FC2_circuit_distance <- Run_CS.jl(jl.inputs, FC2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FC2_circuit_matrix <- circuit_matrix(current = FC2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FC2_current <- Run_CS.jl(jl.inputs, FC2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+FC2_mantel <- mantel(as.dist(genetic_distance), as.dist(FC2_circuit_matrix), permutations = 10000)
+output_df[14, 3:4] <- c(FC2_mantel$statistic, FC2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+FC2_cost <-  list(FC2_circuit_matrix)
+names(FC2_cost) <- c("Flow accumulation")
+set.seed(12345)
+FC2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FC2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[14, 5:6] <- c(FC2_lgMMRR$mmrr.tab$tpvalue[1],FC2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+FC2_pmantel <- mantel.partial(xdis = as.dist(FC2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[14, 7:8] <- c(FC2_pmantel$statistic, FC2_pmantel$signif)
+```
+
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FC3_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FC3_circuit_distance <- Run_CS.jl(jl.inputs, FC3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FC3_circuit_matrix <- circuit_matrix(current = FC3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FC3_current <- Run_CS.jl(jl.inputs, FC3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+FC3_mantel <- mantel(as.dist(genetic_distance), as.dist(FC3_circuit_matrix), permutations = 10000)
+output_df[15, 3:4] <- c(FC3_mantel$statistic, FC3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+FC3_cost <-  list(FC3_circuit_matrix)
+names(FC3_cost) <- c("Flow accumulation")
+set.seed(12345)
+FC3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FC3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[15, 5:6] <- c(FC3_lgMMRR$mmrr.tab$tpvalue[1],FC3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+FC3_pmantel <- mantel.partial(xdis = as.dist(FC3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[15, 7:8] <- c(FC3_pmantel$statistic, FC3_pmantel$signif)
+```
+
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[4],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FC4_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FC4_circuit_distance <- Run_CS.jl(jl.inputs, FC4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FC4_circuit_matrix <- circuit_matrix(current = FC4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FC4_current <- Run_CS.jl(jl.inputs, FC4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+FC4_mantel <- mantel(as.dist(genetic_distance), as.dist(FC4_circuit_matrix), permutations = 10000)
+output_df[16, 3:4] <- c(FC4_mantel$statistic, FC4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+FC4_cost <-  list(FC4_circuit_matrix)
+names(FC4_cost) <- c("Flow accumulation")
+set.seed(12345)
+FC4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FC4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[16, 5:6] <- c(FC4_lgMMRR$mmrr.tab$tpvalue[1],FC4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+FC4_pmantel <- mantel.partial(xdis = as.dist(FC4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[16, 7:8] <- c(FC4_pmantel$statistic, FC4_pmantel$signif)
+```
+
++ Replicate 1 is the best surface
+```{r}
+# FC_conductance <- raster.invert(FC1_resist)
+# FC_conductance_rescaled <- rescale0to1(FC_conductance)
+
+simcomposite_conductance <- SM_conductance_rescaled # * FC_conductance_rescaled
+```
+
+### Annual precipitation
+#### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+precip1_resist <- raster(paste0(read.dir,"Results/annual_precpitation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+precip1_circuit_distance <- Run_CS.jl(jl.inputs, precip1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+precip1_circuit_matrix <- circuit_matrix(current = precip1_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+precip1_current <- Run_CS.jl(jl.inputs, precip1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+precip1_mantel <- mantel(as.dist(genetic_distance), as.dist(precip1_circuit_matrix), permutations = 10000)
+output_df[17, 3:4] <- c(precip1_mantel$statistic, precip1_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+precip1_cost <-  list(precip1_circuit_matrix)
+names(precip1_cost) <- c("precipitation")
+set.seed(12345)
+precip1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = precip1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[17, 5:6] <- c(precip1_lgMMRR$mmrr.tab$tpvalue[1],precip1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+precip1_pmantel <- mantel.partial(xdis = as.dist(precip1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[17, 7:8] <- c(precip1_pmantel$statistic, precip1_pmantel$signif)
+```
+
+#### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+precip2_resist <- raster(paste0(read.dir,"Results/annual_precpitation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+precip2_circuit_distance <- Run_CS.jl(jl.inputs, precip2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+precip2_circuit_matrix <- circuit_matrix(current = precip2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+precip2_current <- Run_CS.jl(jl.inputs, precip2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+precip2_mantel <- mantel(as.dist(genetic_distance), as.dist(precip2_circuit_matrix), permutations = 10000)
+output_df[18, 3:4] <- c(precip2_mantel$statistic, precip2_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+precip2_cost <-  list(precip2_circuit_matrix)
+names(precip2_cost) <- c("precipitation")
+set.seed(12345)
+precip2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = precip2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[18, 5:6] <- c(precip2_lgMMRR$mmrr.tab$tpvalue[1],precip2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+precip2_pmantel <- mantel.partial(xdis = as.dist(precip2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[18, 7:8] <- c(precip2_pmantel$statistic, precip2_pmantel$signif)
+```
+
+#### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+precip3_resist <- raster(paste0(read.dir,"Results/annual_precpitation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+precip3_circuit_distance <- Run_CS.jl(jl.inputs, precip3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+precip3_circuit_matrix <- circuit_matrix(current = precip3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+precip3_current <- Run_CS.jl(jl.inputs, precip3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+precip3_mantel <- mantel(as.dist(genetic_distance), as.dist(precip3_circuit_matrix), permutations = 10000)
+output_df[19, 3:4] <- c(precip3_mantel$statistic, precip3_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+precip3_cost <-  list(precip3_circuit_matrix)
+names(precip3_cost) <- c("precipitation")
+set.seed(12345)
+precip3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = precip3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[19, 5:6] <- c(precip3_lgMMRR$mmrr.tab$tpvalue[1],precip3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+precip3_pmantel <- mantel.partial(xdis = as.dist(precip3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[19, 7:8] <- c(precip3_pmantel$statistic, precip3_pmantel$signif)
+```
+
+#### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220303_", names(covariates_list)[5],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+precip4_resist <- raster(paste0(read.dir,"Results/annual_precpitation.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+precip4_circuit_distance <- Run_CS.jl(jl.inputs, precip4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+precip4_circuit_matrix <- circuit_matrix(current = precip4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+precip4_current <- Run_CS.jl(jl.inputs, precip4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ Mantel test
+```{r}
+set.seed(12345)
+precip4_mantel <- mantel(as.dist(genetic_distance), as.dist(precip4_circuit_matrix), permutations = 10000)
+output_df[20, 3:4] <- c(precip4_mantel$statistic, precip4_mantel$signif)
+```
+
++ lgrMMRR
+```{r}
+precip4_cost <-  list(precip4_circuit_matrix)
+names(precip4_cost) <- c("precipitation")
+set.seed(12345)
+precip4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = precip4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[20, 5:6] <- c(precip4_lgMMRR$mmrr.tab$tpvalue[1],precip4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+set.seed(12345)
+precip4_pmantel <- mantel.partial(xdis = as.dist(precip4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[20, 7:8] <- c(precip4_pmantel$statistic, precip4_pmantel$signif)
+```
+
+```{r}
+output_df %>% write.csv("data/220315_sim85explore_resistance.csv")
+```
+
++ Replicate 3 is the best
+```{r}
+precip_conductance <- raster.invert(precip3_resist)
+precip_conductance_rescaled <- rescale0to1(precip_conductance)
+
+simcomposite_conductance <- simcomposite_conductance * precip_conductance_rescaled
+
+simcomposite_conductance_2 <- SM_conductance_rescaled * precip_conductance_rescaled
+```
+
+```{r}
+precip_conductance %>% writeRaster("data/220305_sim85precipconductance.asc")
+```
+
+```{r}
+sim85_resurfaces <- stack(precip3_resist, precip3_current)
+names(sim85_resurfaces) <- c("precip_resistance", "precip_current")
+
+sim85_resurfaces %>% writeRaster("data/220206_sim85_resurfaces.grd", overwrite = F)
+```
+
+## No smooth - Flow accumulation
+17 Mar, 2022
+
++ create dataframe to store output
+```{r}
+output_df <- data.frame(variables = rep(c("FC - No smoothing"), times = c(4)),
+                        replicates = rep(1:4, times = 1),
+                        beta_geo = NA, 
+                        geo_p = NA,
+                        beta_circuit = NA,
+                        circuit_p = NA,
+                        pmantel_r = NA,
+                        pmantel_p = NA,
+                        lgMMRR_fp = NA,
+                        lgMMRR_r2 = NA)
+```
+
+### Replicate 1
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_1/")  
+
+write.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_1/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FCns1_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FCns1_circuit_distance <- Run_CS.jl(jl.inputs, FCns1_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FCns1_circuit_matrix <- circuit_matrix(current = FCns1_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FCns1_current <- Run_CS.jl(jl.inputs, FCns1_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ lgrMMRR
+```{r}
+FCns1_cost <-  list(FCns1_circuit_matrix)
+names(FCns1_cost) <- c("Flow accumulation -ns")
+set.seed(12345)
+FCns1_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FCns1_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[1, c(3:6,9:10)] <- c(FCns1_lgMMRR$mmrr.tab$coefficient[1], FCns1_lgMMRR$mmrr.tab$tpvalue[1], FCns1_lgMMRR$mmrr.tab$coefficient[2], FCns1_lgMMRR$mmrr.tab$tpvalue[2], FCns1_lgMMRR$mmrr.tab$Fpvalue[1],  FCns1_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+FCns1_pmantel <- mantel.partial(xdis = as.dist(FCns1_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[1, 7:8] <- c(FCns1_pmantel$statistic, FCns1_pmantel$signif)
+```
+
+
+### Replicate 2
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_2/")  
+
+write.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_2/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FCns2_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FCns2_circuit_distance <- Run_CS.jl(jl.inputs, FCns2_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FCns2_circuit_matrix <- circuit_matrix(current = FCns2_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FCns2_current <- Run_CS.jl(jl.inputs, FCns2_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ lgrMMRR
+```{r}
+FCns2_cost <-  list(FCns2_circuit_matrix)
+names(FCns2_cost) <- c("Flow accumulation -ns")
+set.seed(12345)
+FCns2_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FCns2_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[2, c(3:6,9:10)] <- c(FCns2_lgMMRR$mmrr.tab$coefficient[2], FCns2_lgMMRR$mmrr.tab$tpvalue[2], FCns2_lgMMRR$mmrr.tab$coefficient[1], FCns2_lgMMRR$mmrr.tab$tpvalue[1], FCns2_lgMMRR$mmrr.tab$Fpvalue[1],  FCns2_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+FCns2_pmantel <- mantel.partial(xdis = as.dist(FCns2_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[2, 7:8] <- c(FCns2_pmantel$statistic, FCns2_pmantel$signif)
+```
+
+
+### Replicate 3
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_3/")  
+
+write.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_3/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FCns3_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FCns3_circuit_distance <- Run_CS.jl(jl.inputs, FCns3_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FCns3_circuit_matrix <- circuit_matrix(current = FCns3_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FCns3_current <- Run_CS.jl(jl.inputs, FCns3_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ lgrMMRR
+```{r}
+FCns3_cost <-  list(FCns3_circuit_matrix)
+names(FCns3_cost) <- c("Flow accumulation -ns")
+set.seed(12345)
+FCns3_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FCns3_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[3, c(3:6,9:10)] <- c(FCns3_lgMMRR$mmrr.tab$coefficient[2], FCns3_lgMMRR$mmrr.tab$tpvalue[2], FCns3_lgMMRR$mmrr.tab$coefficient[1], FCns3_lgMMRR$mmrr.tab$tpvalue[1], FCns3_lgMMRR$mmrr.tab$Fpvalue[1],  FCns3_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+FCns3_pmantel <- mantel.partial(xdis = as.dist(FCns3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[3, 7:8] <- c(FCns3_pmantel$statistic, FCns3_pmantel$signif)
+```
+
+
+### Replicate 4
+```{r}
+read.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_4/")  
+
+write.dir <- paste0("results/resistanceGA_85/220316_nosmooth__", names(covariates_list)[4],"_4/", "circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
+```{r}
+FCns4_resist <- raster(paste0(read.dir,"Results/FC_GT_utm.asc"))
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+FCns4_circuit_distance <- Run_CS.jl(jl.inputs, FCns4_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir)
+FCns4_circuit_matrix <- circuit_matrix(current = FCns4_circuit_distance)
+```
+
+```{r}
+# cumulative current map
+FCns4_current <- Run_CS.jl(jl.inputs, FCns4_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir)
+```
+
++ lgrMMRR
+```{r}
+FCns4_cost <-  list(FCns4_circuit_matrix)
+names(FCns4_cost) <- c("Flow accumulation -ns")
+set.seed(12345)
+FCns4_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = FCns4_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[4, c(3:6,9:10)] <- c(FCns4_lgMMRR$mmrr.tab$coefficient[2], FCns4_lgMMRR$mmrr.tab$tpvalue[2], FCns4_lgMMRR$mmrr.tab$coefficient[1], FCns4_lgMMRR$mmrr.tab$tpvalue[1], FCns4_lgMMRR$mmrr.tab$Fpvalue[1],  FCns4_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+FCns4_pmantel <- mantel.partial(xdis = as.dist(FCns4_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[4, 7:8] <- c(FCns4_pmantel$statistic, FCns4_pmantel$signif)
+```
+```{r}
+output_df %>% write.csv("data/220317_sim85explore_FCns.csv")
+```
+
+
+##LgrMMRR
+```{r}
+load("data/220315_circuit_matrix.RData")
+```
+
+```{r}
+eco_cost <-  list(elev2_circuit_matrix, elev4_circuit_matrix, ITM4_circuit_matrix, SM3_circuit_matrix, FC1_circuit_matrix, precip3_circuit_matrix)
+names(eco_cost) <- c("elev_IR", "elev_IM", "ITM_IR", "SM_IRM", "FC_R", "precip_IR")
+
+eco_cost <-  list(SM3_circuit_matrix, precip3_circuit_matrix)
+names(eco_cost) <- c("SM_IRM", "precip_IR")
+
+set.seed(12345)
+eco_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = eco_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+c(eco_lgMMRR$mmrr.tab$tpvalue[1],eco_lgMMRR$mmrr.tab$r2[1])
+```
+
+
+### Composite surface
+```{r}
+comp_resist <- simcomposite_conductance
+write.dir <- paste0("results/resistanceGA/220303_", "composite_circuitscape/")
+if(!dir.exists(write.dir)) dir.create(write.dir)
+```
+
++ Generate circuit matrix and the current map
+
+```{r}
+# circuit distance
+comp_circuit_distance <- Run_CS.jl(jl.inputs, comp_resist, output = "matrix", CurrentMap = F, EXPORT.dir = write.dir, is_resistance = F)
+comp_circuit_matrix <- circuit_matrix(current = comp_circuit_distance)
+
+# cumulative current map
+comp_current <- Run_CS.jl(jl.inputs, comp_resist, output = "raster", CurrentMap = T, EXPORT.dir = write.dir, is_resistance = F)
+```
+
+
++ lgrMMRR
+```{r}
+comp_cost <-  list(comp_circuit_matrix)
+names(comp_cost) <- c("Comp resistance")
+set.seed(12345)
+comp_lgMMRR <- lgrMMRR(gen.mat = genetic_distance, cost.mats = comp_cost, eucl.mat = geo_dist_GT, nperm = 10000)
+output_df[5, c(3:6,9:10)] <- c(comp_lgMMRR$mmrr.tab$coefficient[2], comp_lgMMRR$mmrr.tab$tpvalue[2], comp_lgMMRR$mmrr.tab$coefficient[1], comp_lgMMRR$mmrr.tab$tpvalue[1], comp_lgMMRR$mmrr.tab$Fpvalue[1],  comp_lgMMRR$mmrr.tab$r2[1])
+```
+
++ partial mantel
+```{r}
+comp_pmantel <- mantel.partial(xdis = as.dist(comp_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+output_df[5, 7:8] <- c(comp_pmantel$statistic, comp_pmantel$signif)
+```
+
+### p-mantel
+```{r}
+set.seed(12345)
+precip3_pmantel <- mantel.partial(xdis = as.dist(precip3_circuit_matrix), ydis = as.dist(genetic_distance), zdis = as.dist(geo_dist_GT), permutations = 10000) 
+c(precip3_pmantel$statistic, precip3_pmantel$signif)
+x
+p <- scatter_dist(mat_gd = genetic_distance, mat_ld = comp_circuit_matrix, pts_col = "black", method = "lm") + theme_bw(base_size = 18, base_family = "Arial") + xlab("Circuit distance") + ylab("Genetic distance") # ylab(expression(F[st]/(1-F[st])))
+p <- p + annotate("text", x = 2, y = 0.01, size = 6, label = paste0("Significance = ", round(comp_pmantel$signif,3))) + annotate("text", x = 2, y = 0.015, size = 6, label = paste0("partial Mantel statistic r = ", round(comp_pmantel$statistic,3)))
+
+ggsave(plot = p, filename = "docs/220317_fst_compresist_mantel.png", device = "png", dpi = 100, width = 6, height = 5, units = "in" )
+```
+
+
+---------------------------------------
+
+## Resistance surface bootstrap
+```{r}
+
+mat.list <- list(elev_commute_d, temp_commute_d, precip_commute_d, slope_commute_d, comb_commute_dist)
+names(mat.list) <- c("Elevation", "Temperature", "Precipitation", "slope", "combination")
+k <- c(4,4,4,4,7)
+
+# genetic distance matrix has to be setup in a way where there is no column and row names
+response <- matrix(0, 11, 11)
+response[lower.tri(response)] <-  gen.dist[lower.tri(gen.dist)]
+
+# Run bootstrap
+(AIC.boot <- Resist.boot(mod.names = names(mat.list),
+                         dist.mat = mat.list,
+                         n.parameters = k,
+                         sample.prop = 0.75,
+                         iters = 1000,
+                         obs = 11,
+                         genetic.mat = response,
+                         rank.method = c("LL")
+))
+```
+## Combine resistance surfaces
+
+### elevation and precipitation
+```{r}
+elevation <- covariates_list[[1]]
+elevation <- aggregate(elevation, fact=2, fun=mean)
+
+precipitation <- covariates_list[["precipitation"]]
+precipitation <- aggregate(precipitation, fact=2, fun=mean)
+precipitation <- reproj2(precipitation, elevation)
+
+r.stack <- stack(elevation, precipitation)
+
+PARM <- c(1, 2, 1813, 7, 0.95, 850.49)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211210", "elev_precp", "/") 
+dir.create(write.dir)
+
+GA.inputs <- GA.prep(ASCII.dir = r.stack,
+                     Results.dir = write.dir,
+                     parallel = 4)
+
+gdist.inputs <- gdist.prep(length(sp.dat), samples = sp.dat,
+                             response = lower(gen.dist),
+                             method = 'commuteDistance') ## Optimize using commute distance
+
+Resist <- Combine_Surfaces(PARM = PARM,
+                           gdist.inputs = gdist.inputs,
+                           GA.inputs = GA.inputs,
+                           out = NULL,
+                           rescale = TRUE,
+                           p.contribution = F)
+```
+
+```{r}
+comb_commute_dist <- Run_gdistance(gdist.inputs, r = Resist)
+comb_commute_dist <- comb_commute_dist %>% as.matrix()
+rownames(comb_commute_dist) <- colnames(comb_commute_dist) <- colnames(reynolds_fst)
+
+vegan::mantel(as.dist(reynolds_fst), as.dist(comb_commute_dist), permutations = 9999)
+
+cost_d <-  list(comb_commute_dist)
+names(cost_d) <- c("comb")
+set.seed(12345)
+lgMMRR_mod1 <- lgrMMRR(gen.mat = gen.dist, cost.mats = cost_d, eucl.mat = mat_geo_km)
+lgMMRR_mod1
+```
+
+
+## Run Circuitscape analysis
+### Altitude
+```{r, eval = F}
+resistance_layer <- raster("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211112_elevation/Results/GHA_msk_alt.asc")
+resistance_layer2 <- trim(mask( resistance_layer, bbox_buffer))
+```
+
++ visualise the resistance layer
+
+```{r, eval = F}
+pal_res <- colorRampPalette(rev(brewer.pal(8, name = "RdYlBu")), interpolate = "linear", space = "Lab")
+
+cond_raster <- function(resistance_layer){
+  tm_shape(resistance_layer)+ 
+  tm_raster(title="Resistance", alpha = 1, palette = pal_res(100), style = "cont", legend.is.portrait = T, legend.show = T)+
+  tm_compass(type = "arrow", position = c(0, 0.9)) +
+  tm_layout(legend.outside = T, frame = T, fontfamily = "Verdana", legend.title.fontface = 2, legend.text.size = 1)
+  }
+
+res_map <- cond_raster(resistance_layer = resistance_layer2)
+# tmap_save(tm = res_map, filename = "Docs/211117_resistance_slope.png")
+```
+
+
+```{r, eval = F}
+### rasterize the sites
+
+resistance <- raster::extract(resistance_layer, sp.dat)
+sites <- rasterize(x = sp.dat, y = resistance_layer2, field = resistance)
+
+writeRaster(sites, "Code/Project codes/211028_Ghana_analysis/results/circuitscape/211112_elevation/sites_elev.asc", overwrite = T)
+writeRaster(resistance_layer2, "Code/Project codes/211028_Ghana_analysis/results/circuitscape/211112_elevation/GT_resistance_elev.asc", overwrite = T)
+
+# p <- bbox(eth_pts)
+
+
+# Load file after circuitscape analysis -----------------------------------
+
+cumcur_map <- raster("Code/Project codes/211028_Ghana_analysis/results/circuitscape/211112_elevation/211112_circuitscape/out_file_cum_curmap.asc")
+
+crs(cumcur_map) <- "+proj=utm +zone=30 +datum=WGS84 +units=km +no_defs"
+
+cumcur_map2 <- trim( mask( cumcur_map, bbox_buffer))
+library(RColorBrewer)
+pal <- hcl.colors(n = 100, palette = "inferno")
+pal2 <- c(pal[seq(1,60, by = 3)], pal[60:100])
+plot(cumcur_map2, col = pal2)
+
+
+# Plot resistance map -----------------------------------------------------
+proj4string(sp.dat) = CRS("+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs")
+gene_flow <- tm_shape(cumcur_map) +
+  tm_raster(style = "cont", palette = pal2, legend.is.portrait = T, title = "Gene flow") +
+  tm_layout(legend.outside = T, legend.outside.position = "right",
+            frame = FALSE, fontfamily = "Verdana", legend.title.size = 1.2, legend.title.fontface = 2, legend.text.size = 1) +
+  tm_shape(sp.dat) +
+  tm_dots(size = 2, col = "white")
+  
+
+tmap_save(gene_flow, filename = "Docs/211117_gene_flow.png")
+```
+#### Plot transformation
+```{r, eval = F}
+resistance_layer <- raster("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211118_distance_to_water_cost_d/Results/X1._gha_osm_dst_waterway_100m_2016.asc")
+
+df <- data.frame(original_values = values(cont.rast), transformed_values = values(resistance_layer))
+elev_trans <- ggplot(df, aes(original_values, transformed_values)) +
+  geom_point(alpha = .05, size = 2.5) + theme_bw(base_family = "Verdana") +
+  xlab("Elevation (m)") + ylab("Resistance Value") 
+```
+
+```{r, eval = F}
+plot_transform <- function(cont.rast, resistance_layer, xlabel){
+  df <- data.frame(original_values = values(cont.rast),
+                   transformed_values = values(resistance_layer))
+  plot_trans <- ggplot(df, aes(original_values, transformed_values)) +
+    geom_point(alpha = .05, size = 2.5) + theme_bw(base_family = "Verdana") +
+    xlab(xlabel) + ylab("Resistance Value")
+  return(plot_trans)
+}
+```
+
+#### Connectivity estimates: commute distance
+```{r}
+data <- read.csv("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211112_elevation/Results/GHA_msk_alt_commuteDistance_distMat.csv", header = F)
+library(gdistance)
+library(vegan)
+library(graph4lg)
+tr <- transition(resistance_layer, transitionFunction = function(x)1/mean(x), directions = 8 )
+# tr <- geoCorrection( tr, type="c", multpl=FALSE, scl=FALSE)
+eDist <- as.matrix(commuteDistance( tr, sp.dat))
+
+### Commute distance using resistanceGA
+commute_dist <- Run_gdistance(gdist.inputs, r = resistance_layer)
+
+## sanity check
+ghana_sites_selected %>% select(LONG,LAT, pop_id) %>% distinct()
+sp.dat %>% coordinates
+reynolds_fst
+
+rownames(eDist) <- colnames(eDist) <- colnames(reynolds_fst)
+mantel_reynold_fst <- vegan::mantel(as.dist(reynolds_fst), as.dist(eDist), permutations = 9999)
+
+p <- scatter_dist(mat_gd = reynolds_fst, mat_ld = eDist, 
+             pts_col = "black", method = "lm") + theme_bw(base_size = 12, base_family = "Arial") + xlab("Ecological distance based on connectivity analysis")
+ggsave(plot = p, filename = "Docs/211117_fst_geodist_ecodist.png", device = "png", dpi = 100, width = 6, height = 5, units = "in" )
+
+```
+
+#### Connectivity estimates: circuit distance
+```{r}
+data <- read.table("Code/Project codes/211028_Ghana_analysis/results/circuitscape/211112_elevation/211112_circuitscape/out_file_resistances_3columns.out",header=FALSE, sep=" ")
+ctDist <- matrix(0,nrow=11,ncol=11)
+for( i in 1:nrow(data)){
+  ctDist[ data$V1[i], data$V2[i] ] <- data$V3[i]
+}
+ctDist <- ctDist + t(ctDist)
+ctDist[1:5,1:5]
+
+set.seed(999)
+mantel(as.dist(fst_matrix_ghana), as.dist(ctDist), permutations = 999)
+## This is not significant in Circuitscape analysis
+
+df$circuit_distance <- ctDist[lower.tri(ctDist)]
+ggplot(df,aes(x=circuit_distance,y=Genetic_Distance)) + geom_point() + 
+  stat_smooth(method=lm, formula = y ~ x) + xlab("Circuit distance landcover resistance") + ylab("Genetic distance") + theme_minimal()
+
+```
+
+###### Annual precipitation
+```{r, eval = F}
+res_prec <- raster("data/210712_resistanceGA_100/annual_precp/Results/annual_precp.asc")
+annual_prec <- covariates[["annual_precp"]]
+
+prec_trans <- plot_transform(cont.rast = annual_prec, resistance_layer = res_prec, xlabel = "Annual precipitation (mm)")
+```
+
+###### Annual temperature
+```{r, eval = F}
+res_temp <- raster("data/210712_resistanceGA_100/annual_mean_temp/Results/annual_mean_temp.asc")
+annual_temp <- covariates[["annual_mean_temp"]]/10
+
+temp_trans <- plot_transform(cont.rast = annual_temp, resistance_layer = res_temp, xlabel =  "Annual mean temperature (°C)")
+```
+
+```{r, eval = F}
+png(filename = "data/210712_resistanceGA_100/transformation.png", width = 700, height = 250)
+gridExtra::grid.arrange(slope_trans, prec_trans, temp_trans, nrow = 1)
+dev.off()
+```
+
+
+
+### Altitude + distance to water
+```{r}
+resistance_layer <- raster("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211116_elev_dist_3_100_iteratins/rep_1/elev.dw/elev.dw.asc")
+
+```
+
+
+## Resistance surface optimisation
+
+```{r}
+# Directory to write .asc files and results
+write.dir <- "Code/Project codes/211028_Ghana_analysis/results/registanceGA/211117_elevation/"
+
+dir.create(write.dir)
+
+## Sample locations
+sp.dat <- as(ghana_sites_selected,"SpatialPoints")
+## Continuous landscape surface
+cont.rast <- covariates_list[[1]]
+## Genetic distance measured between sample locations (chord distance)
+gen.dist <- reynolds_fst
+plot(cont.rast)
+plot(sp.dat, add = T, pch = 19)
+```
+
+-   Write a loop to optmise all the rasters
+
+### Altitude
+
+```{r}
+GA.inputs <- GA.prep(ASCII.dir=cont.rast,
+                     Results.dir=write.dir,
+                     method = "AIC",
+                     select.trans = list("A"), # set A when doing actual run
+                    # seed = 12345,
+                     parallel = 14,
+                     maxiter = 50) # default = 1000
+
+gdist.inputs <- gdist.prep(length(sp.dat), samples = sp.dat,
+                           response = lower(gen.dist),
+                           method = 'commuteDistance') ## Optimize using commute distance
+# Run optimization
+SS_RESULTS.gdist <- SS_optim(gdist.inputs = gdist.inputs, GA.inputs = GA.inputs)
+
+```
+
+```{r}
+# Inverse-Reverse Monomolecular	2.167545701	1813.696449
+r.tran <- Resistance.tran(transformation = "Inverse-Reverse Monomolecular", shape = 2.167545701, max = 1813.696449, r = cont.rast)
+plot.t <- Plot.trans(PARM = c(2.167545701, 1813.696449), Resistance = cont.rast, transformation = "Inverse-Reverse Monomolecular")
+```
+
+## Multiple runs
+
+### Mutiple surfaces
+#### Elevation and distance to water
+
+```{r}
+reproj2 <- function(tbc, c){
+  tbc <- crop(tbc,c)
+  tbc <- projectRaster(tbc, c)
+}
+```
+
+```{r}
+elevation <- covariates_list[[1]]
+elevation <- aggregate(elevation, fact=5, fun=mean)
+dist_road <- covariates_list[[14]]
+dist_road_1km <- aggregate(dist_road, fact=50, fun=mean)
+dist_road_1km <- reproj2(dist_road_1km, elevation)
+```
+
+
+```{r, eval = F}
+write.dir <- "Code/Project codes/211028_Ghana_analysis/results/registanceGA/211201_elev_dist_road/"
+dir.create(write.dir)
+cont.rast <- stack(elevation, dist_water_1km)
+names(cont.rast) <- c("elev", "d_road")
+gdist.inputs <- gdist.prep(length(sp.dat), samples = sp.dat,
+                           response = lower(gen.dist),
+                           method = 'commuteDistance')
+
+GA.inputs <- GA.prep(ASCII.dir=cont.rast,
+                     Results.dir="all.comb",
+                     method = "LL",
+                     select.trans = list("M", "M"), # set A when doing actual run
+                     # seed = 12345,
+                     parallel = 10,
+                     maxiter = 50) # default = 1000
+
+all.comb_results <- all_comb(gdist.inputs = gdist.inputs,
+                             GA.inputs = GA.inputs,
+                             results.dir = write.dir,
+                             max.combination = 2,
+                             replicate = 1,
+                             dist_mod = F,
+                             null_mod = F
+                             )
+```
+
+```{r, eval=F}
+r.tran <- Resistance.tran(transformation = "Inverse Monomolecular", shape = 10.4651, max = 1153.708, r = cont.rast)
+plot.t <- Plot.trans(PARM = c(10.4651, 1153.708), Resistance = cont.rast, transformation = "Inverse Monomolecular")
+
+```
+
+Find more about this error
+
+```{r}
+# Error in { : 
+#   task 1 failed - "no slot of name "data" for this object of class "RasterStack""
+```
+
+```{r, eval = F}
+alt <- readRDS("data/210613_resistanceGA/all_comb_1623639526/rep_1/ETH_msk_alt.annual_mean_temp/ETH_msk_alt.annual_mean_temp.rds")
+```
+
+## Optimization of the single surface
+```{r}
+optimise_resistance <- function(cont.rast, write.dir = "Code/Project codes/211028_Ghana_analysis/results/registanceGA/"){
+  GA.inputs <- GA.prep(ASCII.dir=cont.rast,
+                     Results.dir=write.dir,
+                     method = "AIC",
+                     select.trans = list("A"), # set A when doing actual run
+                     # seed = 12345,
+                     parallel = 10,
+                     maxiter = 100,
+                     pmutation = 0.50,
+                     pcrossover = 0.90) # default = 1000
+
+  gdist.inputs <- gdist.prep(length(sp.dat), samples = sp.dat,
+                             response = lower(gen.dist),
+                             method = 'commuteDistance') ## Optimize using commute distance
+  # Run optimization
+  SS_RESULTS.gdist <- SS_optim(gdist.inputs = gdist.inputs, GA.inputs = GA.inputs)
+  
+  return(SS_RESULTS.gdist)
+}
+```
+
+### Distance to the water
+```{r}
+cont.rast <- covariates_list[["distance_to_water"]] # 100m resolution - downsample otherwise take a long time
+cont.rast <- aggregate(cont.rast, fact=20, fun=mean)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/211202_", names(covariates_list)[6],"_2/")  
+dir.create(write.dir)
+resistance_dist_road <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+### Vegetation indices (NDVI)
+```{r}
+cont.rast <- covariates_list[["ndvi"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[10], "_2/") 
+dir.create(write.dir)
+resistance_ndvi <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+
+### Distance to the road
+```{r}
+cont.rast <- covariates_list[["dist_road"]]
+cont.rast <- aggregate(cont.rast, fact=20, fun=mean)
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[14], "_2/") 
+dir.create(write.dir)
+resistance_dist_road <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+
+
+### Human population density
+```{r, eval = F}
+cont.rast <- covariates_list[["popden"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[11], "_2/") 
+dir.create(write.dir)
+resistance_popden <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+
+### Night time lights
+```{r}
+cont.rast <- covariates_list[["nightlights"]]
+cont.rast <- aggregate(cont.rast, fact=20, fun=mean)
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[5], "_2/") 
+dir.create(write.dir)
+resistance_nightlights <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+
+### Slope
+```{r}
+cont.rast <- covariates_list[["slope"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[4], "_2/") 
+dir.create(write.dir)
+resistance_slope <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+### Annual average temperature
+```{r}
+cont.rast <- covariates_list[["temperature"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[3], "_2/") 
+dir.create(write.dir)
+resistance_annual_temp <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+
+### Annual precipitation
+```{r}
+cont.rast <- covariates_list[["precipitation"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[2], "_2/") 
+dir.create(write.dir)
+tic()
+resistance_dist_road <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+toc()
+```
+
+
+### Topographic wetness index
+```{r}
+cont.rast <- covariates_list[["wetness_index"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=mean)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[7], "_2/") 
+dir.create(write.dir)
+resistance_wetness_index <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+
+```
+
+
+
+### Land cover 
+```{r}
+cont.rast <- covariates_list[["land_cover"]]
+cont.rast <- aggregate(cont.rast, fact=2, fun=modal)
+
+write.dir <- paste0("Code/Project codes/211028_Ghana_analysis/results/registanceGA/", names(covariates_list)[13], "_2/") 
+dir.create(write.dir)
+resistance_landcover <- optimise_resistance(cont.rast = cont.rast, write.dir = write.dir)
+```
+
+### Barrier Lake

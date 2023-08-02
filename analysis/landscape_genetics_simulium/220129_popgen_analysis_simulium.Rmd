@@ -1,0 +1,609 @@
+---
+title: "Exploring simulium genetics data"
+author: "Himal Shrestha"
+date: "29/01/2022"
+output: html_document
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/User/OneDrive - LA TROBE UNIVERSITY/1_Projects/transition_ghana_LG/landscape_genetics_ghana")
+```
+
+## Load data and libraries
+```{r}
+library(vcfR)
+library(adegenet)
+library(tidyverse)
+library(poppr)
+library(hierfstat)
+library(PopGenReport)
+library(graph4lg)
+library(sf)
+library(rgdal)
+library(vegan)
+```
+```{r}
+extrafont::loadfonts(device = "win", quiet = T)
+```
+
+### Explore genetic data
+
+```{r}
+myvcf <- read.vcfR("data/ghana_simulium/ghana_simulium_original.vcf")
+# 93 samples and 645 SNPs
+
+## filtered vcf
+# myvcf <- read.vcfR("data/210221_simulium_vcf_filtered.vcf.gz")
+
+## filtered vcf with 85 samples
+# myvcf <- read.vcfR("data/220304_simvcf_filtered85samples.vcf.gz")
+
+# head(myvcf)
+
+# sample names
+# colnames(myvcf@gt)
+```
++ There are 645 SNPs from 93 samples
+
+### Converting to genlight object
+```{r}
+# x <- vcfR2genlight(myvcf)
+# dist(x) # 4278 elements: for 93 samples; n*(n-1)/2
+
+# i <- dist(x, diag = T, upper = T)
+
+# sample_ids <- colnames(myvcf@gt)[-1]
+# pops <- substr(sample_ids, nchar(sample_ids)-4, nchar(sample_ids)-2) %>% as_factor()
+
+# pop(x) <- pops
+# ploidy(x) <- 1
+# 
+# bitwise.dist(x)
+```
+
+### Clustering anlaysis
+- Using this [tutorial](https://grunwaldlab.github.io/Population_Genetics_in_R/clustering_plot.html)
+
+
+```{R}
+gl_rubi <- vcfR2genlight(myvcf)
+maxK <- 20
+myMat <- matrix(nrow=10, ncol=maxK)
+colnames(myMat) <- 1:ncol(myMat)
+for(i in 1:nrow(myMat)){
+  grp <- find.clusters(gl_rubi, n.pca = 45, choose.n.clust = FALSE,  max.n.clust = maxK)  # `find.clusters()` is sensitive to `n.pca` - =200 in the vignette
+  myMat[i,] <- grp$Kstat
+}
+```
+
+- finding the number of clusters
+```{r}
+library(ggplot2)
+library(reshape2)
+my_df <- melt(myMat)
+colnames(my_df)[1:3] <- c("Group", "K", "BIC")
+# my_df <- my_df %>% filter(K < 20)
+my_df$K <- as.factor(my_df$K)
+# head(my_df)
+
+p1 <- ggplot(my_df, aes(x = K, y = BIC))
+p1 <- p1 + geom_boxplot()
+p1 <- p1 + theme_bw(base_size = 14)
+p1 <- p1 + xlab("Number of groups (K)") 
+p1
+```
+### DAPC
+```{r}
+my_k <- 8:12
+
+grp_l <- vector(mode = "list", length = length(my_k))
+dapc_l <- vector(mode = "list", length = length(my_k))
+
+for(i in 1:length(dapc_l)){
+  set.seed(9) ## reproducibility
+  grp_l[[i]] <- find.clusters(gl_rubi, n.pca = 45, n.clust = my_k[i])
+  dapc_l[[i]] <- dapc(gl_rubi, pop = grp_l[[i]]$grp, n.pca = 45, n.da = my_k[i])
+}
+
+my_df <- as.data.frame(dapc_l[[length(dapc_l) ]]$ind.coord)
+my_df$Group <- dapc_l[[ length(dapc_l) ]]$grp
+head(my_df)
+
+my_pal <- RColorBrewer::brewer.pal(n=12, name = "Set3")
+
+p2 <- ggplot(my_df, aes(x = LD1, y = LD2, fill = Group)) + geom_jitter(alpha = .8, size = 3, shape = 21, color = "black", width = 0.5, height = 0.5)
+p2 <- p2 + theme_bw(base_size = 14)
+p2 <- p2 + scale_color_manual(values=c(my_pal))
+p2 <- p2 + scale_fill_manual(values=c(paste(my_pal, "66", sep = "")))
+p2
+```
+
+```{r}
+# Group 6 and 10 were deemed to be outliers
+summary(my_df$Group)
+my_df %>% filter(Group %in% c(6,10))
+# 8 samples deemed as outlier and removed from down stream analysis
+```
+## Filterting VCF file
++ Filter the outliers
+1. __Group 10__: SIM_GHA_AGB11, SIM_GHA_ASU18, SIM_GHA_FOW03, SIM_GHA_FOW16, SIM_GHA_FOW23, SIM_GHA_WIA11 
+2. __Group 6__: SIM_GHA_AGB07, SIM_GHA_FOW02
+
+```{r}
+to_filter <- c('SIM_GHA_AGB11', 'SIM_GHA_ASU18', 'SIM_GHA_FOW03', 'SIM_GHA_FOW16', 'SIM_GHA_FOW23', 'SIM_GHA_WIA11', 'SIM_GHA_AGB07', 'SIM_GHA_FOW02') ## removed, might be different species
+
+filter_index <- !colnames(myvcf@gt) %in% to_filter
+
+myvcf@gt <- myvcf@gt[ ,filter_index]
+myvcf_filtered <- myvcf
+
+# write.vcf(myvcf_filtered, file = "data/ghana_simulium/simvcf_filtered85samples.vcf.gz" )
+```
+
+## Converting to Genind object
+```{r}
+ghana_genind <- vcfR2genind(myvcf_filtered, ploidy = 1)
+pop_id <- ghana_genind@tab %>% rownames %>% substr(start = 9, stop = 11) %>% as_factor() %>%  data.frame()
+ghana_genind@pop <- pop_id$.
+```
+
+```{r}
+bs_ghana<-basic.stats(ghana_genind, diploid = FALSE)
+
+num_samples <- summary(pop_id$.)
+```
+
+- calculate alleles per site
+```{r}
+summary_genind <- summary(ghana_genind)
+# number of alleles
+summary_genind$pop.n.all
+
+## Observed gene diversities
+ghana_hs <- as.data.frame(t(bs_ghana$Hs))
+ghana_hs$means <- rowMeans(ghana_hs)
+ghana_hs$means
+
+## Mean allelic richness
+al_rich <- allel.rich(ghana_genind)$mean.richness # From popgenreport 
+allel.rich(ghana_genind)$sum.richness
+```
+
+### haplotype statistics
+!!!We need fasta files of the Simulium!!! Fasta files were generated from vcf files using PGDSpyder
+- Thanks to
+1. https://www.researchgate.net/post/How-can-I-compute-haplotype-number-and-haplotype-diversity-from-some-given-sequences-in-R-with-the-package-pegas
+2. https://biolsystematics.wordpress.com/populationsandhaplotypenetworks/
+```{r}
+library(haplotypes)
+x<-read.fas("data/ghana_simulium/simulium85_GT.fa")
+
+h<-haplotypes::haplotype(x,indels="5th")
+pop <- read.csv("data/ghana_simulium/simulium_seq_ID_85.csv", header = F) # extracted from fasta file
+pop <- pop$V1
+
+
+g<-grouping(h, pop)
+sz<-apply(g$hapmat,2,function(c)sum(c!=0)) %>% data.frame()
+# Haplotype frequency
+sz$.
+```
+
+```{r}
+data.frame(sites = names(al_rich),
+           n = num_samples,
+           no_alleles = summary_genind$pop.n.all,
+           allelic_richness = al_rich,
+           gene_div = ghana_hs$means,
+           haplo_freq = sz$.)
+```
+
+
+### genetic distances
+```{r}
+(Ds<-genet.dist(ghana_genind, method="Ds", diploid = F)) # Nei's standard genetic distances
+(Fst<-genet.dist(ghana_genind, method="Fst", diploid = F)) # Fst distance
+(Dch<-genet.dist(ghana_genind, method="Dch", diploid = F)) # Chord distance
+```
+##### visualise Fst matrix
+```{r}
+Fst %>% as.matrix() -> Fst
+colnames(Fst) <- rownames(Fst) <- unique(pop_id$.)
+Fst_edges <- pw_mat_to_df(Fst)
+
+p <- ggplot(Fst_edges, aes(value)) +
+  geom_histogram(fill = "white", col = "black")+
+  geom_density(fill = "red", alpha = 0.2) +
+  xlab("Genetic distance") +
+  theme_minimal()
+
+# ggsave(plot = p, filename = "PhD/Genomics/Docs/211101_Fst_15_pts_hist.png", device = "png", dpi = 100, width = 5, height = 5, units = "in" )
+pheatmap::pheatmap(Fst)
+```
+
+
+
+
+## Adgenet basic analysis
+```{r}
+# number of samples
+genind_summary <- table(pop(ghana_genind)) %>% data.frame() 
+barplot(table(pop(ghana_genind)), col=funky(17), las=3,
+xlab="Population", ylab="Sample size")
+
+# number of alleles
+data_summary <- summary(ghana_genind)
+barplot(data_summary$pop.n.all, col=funky(17), las=3,
+xlab="Population", ylab="Number of alleles")
+
+```
+
+
+#### DAPC cross validation
+
+```{r}
+dapc.ghana <- dapc(ghana_genind, var.contrib = TRUE, scale = FALSE, n.pca = NULL, n.da = nPop(ghana_genind) - 1) # number of axis returned 60
+scatter(dapc.ghana, col = hcl.colors(3, palette = "Dynamic"), cell = 0, pch = 18:23, cstar = 0, mstree = TRUE, lwd = 2, lty = 2, legend = TRUE, clabel = FALSE, scree.pca = T)
+```
+
+- The output is very sensitive to `n.pca`
+- We need to cross validate and find accurate `n.pca` for our data
+
+```{r}
+set.seed(999)
+pramx <- xvalDapc(tab(ghana_genind, NA.method = "mean"), pop(ghana_genind))
+
+set.seed(999)
+system.time(pramx <- xvalDapc(tab(ghana_genind, NA.method = "mean"), pop(ghana_genind),
+                             n.pca = 20:70, n.rep = 100,
+                             parallel = "multicore", ncpus = 8L))
+pramx$`Number of PCs Achieving Highest Mean Success`
+```
+
+- Scatter plot using ggplot2
+- https://tomjenkins.netlify.app/2020/09/21/r-popgen-getting-started/
+```{r}
+library(RColorBrewer)
+library(ggthemes)
+# library(pals)
+# Create a data.frame containing individual coordinates
+ind_coords = as.data.frame(pramx$DAPC$ind.coord)
+
+# Rename columns of dataframe
+colnames(ind_coords)[1:2] = c("Axis1","Axis2")
+
+# Add a column containing individuals
+ind_coords$Ind = indNames(ghana_genind)
+
+# Add a column with the site IDs
+ind_coords$Site = ghana_genind$pop
+
+levels(ind_coords$Site) <- c("Black volta", "Daka", "Pru")
+# Calculate centroid (average) position for each population
+centroid = aggregate(cbind(Axis1, Axis2) ~ Site, data = ind_coords, FUN = mean)
+
+# Add centroid coordinates to ind_coords dataframe
+ind_coords = left_join(ind_coords, centroid, by = "Site", suffix = c("",".cen"))
+
+# Define colour palette
+cols = hcl.colors(nPop(ghana_genind), "Set3")
+cols <- rainbow(n = nPop(ghana_genind), alpha = 0.5)
+
+# Custom x and y labels
+percent = pramx$DAPC$eig/sum(pramx$DAPC$eig)*100
+xlab = paste("Axis 1 (", format(round(percent[1], 1), nsmall=1)," %)", sep="")
+ylab = paste("Axis 2 (", format(round(percent[2], 1), nsmall=1)," %)", sep="")
+
+# Custom theme for ggplot2
+ggtheme = theme(axis.text.y = element_text(colour="black", size=12),
+                axis.text.x = element_text(colour="black", size=12),
+                axis.title = element_text(colour="black", size=12),
+                panel.border = element_rect(colour="black", fill=NA, size=1),
+                panel.background = element_blank(),
+                plot.title = element_text(hjust=0.5, size=15) 
+)
+# Scatter plot axis 1 vs. 2
+p1 <- ggplot(data = ind_coords, aes(x = Axis1, y = Axis2))+
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = 0)+
+  # spider segments
+  geom_segment(aes(xend = Axis1.cen, yend = Axis2.cen, colour = Site), show.legend = FALSE)+
+  # points
+  geom_point(aes(fill = Site), shape = 21, size = 3, show.legend = FALSE)+
+  # centroids
+  geom_label(data = centroid, aes(label = Site, fill = Site), size = 4, show.legend = FALSE)+
+  # colouring
+  scale_fill_manual(values = cols)+
+  scale_colour_manual(values = cols)+
+  # custom labels
+  labs(x = xlab, y = ylab)+
+  ggtitle("")+
+  # custom theme
+  theme_bw(base_family = "Arial")
+
+```
+
+
+```{r}
+# my_pal <- hcl.colors(length(unique(pop(ghana_genind))), palette = "Viridis")
+# Define colour palette
+my_pal = hcl.colors(nPop(ghana_genind), "Set3")
+my_pal <- rainbow(n = nPop(ghana_genind), alpha = 0.5)
+ssuresistass<-summary(pramx$DAPC)$assign.per.pop * 100
+group <- factor(rownames(ssuresistass))
+ssuresistass <- ssuresistass %>% as.data.frame() %>% mutate(Group = group) %>% arrange(Group)
+
+p2 <- ggplot(data=ssuresistass, aes(x=Group, y=., fill = Group)) +
+geom_bar(stat="identity", color = "black") +
+coord_flip()+
+ylim(0, 100)+
+scale_x_discrete(limits = ssuresistass$Group)+
+  ylab("% correct assignment") +
+  scale_fill_manual(values=my_pal)+
+theme_bw(base_family = "Arial") + theme(legend.position = "none")
+
+# ggsave(plot = p, filename = "PhD/Genomics/Docs/211108_DAPC_basins_assign_prob.png", device = "png", dpi = 100, width = 10, height = 5, units = "in" )
+```
+
+##### Publication - t-test
+- Compare correct assignment probability between vector and parasite samples
+
+- custum function from [stackoverflow](https://stats.stackexchange.com/questions/30394/how-to-perform-two-sample-t-tests-in-r-by-inputting-sample-statistics-rather-tha)
+```{r}
+# m1, m2: the sample means
+# s1, s2: the sample standard deviations
+# n1, n2: the same sizes
+# m0: the null value for the difference in means to be tested for. Default is 0. 
+# equal.variance: whether or not to assume equal variance. Default is FALSE. 
+t.test2 <- function(m1,m2,s1,s2,n1,n2,m0=0,equal.variance=FALSE)
+{
+    if( equal.variance==FALSE ) 
+    {
+        se <- sqrt( (s1^2/n1) + (s2^2/n2) )
+        # welch-satterthwaite df
+        df <- ( (s1^2/n1 + s2^2/n2)^2 )/( (s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1) )
+    } else
+    {
+        # pooled standard deviation, scaled by the sample sizes
+        se <- sqrt( (1/n1 + 1/n2) * ((n1-1)*s1^2 + (n2-1)*s2^2)/(n1+n2-2) ) 
+        df <- n1+n2-2
+    }      
+    t <- (m1-m2-m0)/se 
+    dat <- c(m1-m2, se, t, 2*pt(-abs(t),df))    
+    names(dat) <- c("Difference of means", "Std Error", "t", "p-value")
+    return(dat) 
+}
+```
+
+```{r}
+mean_volv <- 71.21028; sd_volv <- 11.44626; n_volv <- 11
+mean_sim85 <- 74.03; sd_sim85 <- 8.36; n_sim85 <- 4
+
+(tt2 <- t.test2(mean_volv, mean_sim85, sd_volv, sd_sim85, n_volv, n_sim85))
+
+```
+
+#### Plot DAPC barplot
+Thanks to (this tutorial)[https://luisdva.github.io/rstats/model-cluster-plots/]
+```{r}
+sample_info <- read.csv("data/sample_info.csv")
+```
+
+```{r}
+df <- pramx$DAPC$posterior %>% data.frame()
+df$sample_id <- rownames(pramx$DAPC$posterior) %>% as.factor()
+df$comm_id <- df$sample_id %>% substr(start = 9, stop = 11) %>% as_factor()
+# ancestry_coef <- q.matrix %>% data.frame()
+# names(ancestry_coef) <- paste0("Group_", 1:4)
+# ancestry_coef <- ancestry_coef %>% mutate(pop_id = data_ghana_inf$pop_id, river_basin = data_ghana_inf$river_basin, sample_id = data_ghana_inf$Sample_ID...1)
+df_long <- df %>% pivot_longer(cols = 1:4, # 1:3 for basin 
+                               names_to = "popGroup",
+                               values_to = "prob") %>% 
+  mutate(popGroup = as_factor(popGroup))
+
+com_id_levels <-  fct_reorder(sample_info$code, sample_info$lon, .desc = F) %>% levels
+df_long$comm_id <- factor(df_long$comm_id, com_id_levels)
+
+# plotting
+library(ggplot2)
+library(forcats)
+library(ggthemes)
+library(patchwork)
+
+p3 <- ggplot(df_long, aes(factor(sample_id), prob, fill = factor(popGroup))) +
+  geom_col(color = "black", size = 0.01) +
+  facet_grid(~comm_id, switch = "x", scales = "free", space = "free") +
+  theme_minimal(base_family = "Arial", base_size = 12) + labs(x = "Individuals", title = "", y = "Membership probability") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expand_scale(add = 1)) +
+  theme(
+    panel.spacing.x = unit(0.1, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(angle = 90)
+  ) + scale_fill_manual(values=my_pal, guide = "none")
+```
+
+```{r}
+library(patchwork)
+p <- (p1+p2+plot_layout(widths = c(2,1)))/p3
+ggsave(plot = p, filename = "Docs/211117_DAPC_river_basin.png", device = "png", dpi = 1000, width = 10, height = 6, units = "in" )
+```
+
+#### Plotting scatter pie
+https://cran.r-project.org/web/packages/scatterpie/vignettes/scatterpie.html
+
+```{r}
+posterior_prob <-pramx$DAPC$posterior %>% as.data.frame()
+posterior_prob$site_code <- df$comm_id
+
+
+posterior_prob_group <- aggregate(posterior_prob[, 1:3], # 1:3 for basin
+                                  list(posterior_prob$site_code), mean)
+posterior_prob_group$code <- posterior_prob_group$Group.1
+
+# sample_loc <- sample_info %>%  dplyr::select(pop_id, Longitude, Latitude) %>% distinct()
+
+posterior_prob_group2 <- left_join(posterior_prob_group, sample_info, by = "code") %>% mutate(Group.1 = NULL)
+```
+
+```{r}
+library(ggmap)
+glgmap   <- get_map(location = c(-2.609, 7.627, 0.194, 8.809), ## bounding box
+                    maptype= "terrain-background", 
+                    col = "color")    
+p_base <- ggmap(glgmap) + theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+```
+
+```{r}
+library(scatterpie)
+library(ggrepel)
+library(ggspatial)
+comm_code <- names(posterior_prob_group2)[1:3] # 1:3 for basin
+p_pie <- p_base + geom_scatterpie(aes(x=lon, y=lat, group=code), data=posterior_prob_group2,                           cols=comm_code) + 
+  scale_fill_manual(values=my_pal, name = "Group") + theme(legend.position="none") +
+  geom_label_repel(data = posterior_prob_group2, aes(lon, lat, label = code), size = 4, alpha = 0.7) +
+  coord_equal()  + coord_sf(crs = sf::st_crs(4326)) + 
+  annotation_scale(location = "br", width_hint = 0.5) +
+  annotation_north_arrow(location = "tl", which_north = "true",
+        pad_x = unit(0.15, "in"), pad_y = unit(0.25, "in"),
+        style = north_arrow_fancy_orienteering)
+```
+```{r}
+p_A <- p_pie+p1+plot_layout(widths = c(2,1))
+p_B <- (p3+p2+plot_layout(widths = c(2.5,1)))
+plot_AB <- p_A/p_B + plot_layout(heights = c(1.9,1.5))
+
+ggsave(plot = plot_AB, filename = "Docs/220501_DAPC_sim85com.png", device = "png", dpi = 1000, width = 10, height = 6, units = "in")
+```
+
+## Adding GIS coordinates
+```{r}
+sample_info <- read.csv("data/sample_info.csv")
+
+
+# ghana_coordinates <- data.frame(
+#   code = rep(sample_info$code, c(22,23,27,21)),
+#   Longitude = rep(sample_info$lon, c(22,23,27,21)),
+#   Latitude = rep(sample_info$lat, c(22,23,27,21))) 
+
+# for filtered samples
+ghana_coordinates <- data.frame(
+  code = rep(sample_info$code, c(20,19,26,20)),
+  Longitude = rep(sample_info$lon, c(20,19,26,20)),
+  Latitude = rep(sample_info$lat, c(20,19,26,20)))
+  
+ghana_genind@other$xy <- ghana_coordinates[,c("Longitude", "Latitude")]
+
+## change into spatial object - set crs
+coordinates(ghana_coordinates) <- (ghana_coordinates[, c("Longitude","Latitude")])
+ghana_coordinates <- ghana_coordinates %>% st_as_sf()
+st_crs(ghana_coordinates) = 4326
+```
+
+21 Feb, 2022
++ Prepare file for plotting sample locations
+```{r}
+ghana_genind <- vcfR2genind(myvcf, ploidy = 1)
+pop_id <- ghana_genind@tab %>% rownames %>% substr(start = 9, stop = 11) %>% as_factor() %>%  data.frame()
+ghana_genind@pop <- pop_id$.
+
+summary_genind <- summary(ghana_genind)
+sample_size <- summary_genind$n.by.pop %>% as.data.frame() 
+colnames(sample_size) <- "n"
+sample_size$code <- rownames(sample_size)
+
+bind_cols(list(sample_info, sample_size), .id = "code", .name_repair = "unique")
+
+vector_locations <- full_join(sample_info, sample_size, by = "code")
+# vector_locations %>% write.csv("data/220221_vector_locations.csv")
+```
+
+### Geographic distance
+
+- change coordinates to UTM
+```{r}
+lonlat2UTM = function(lonlat) {
+  utm = (floor((lonlat[1] + 180) / 6) %% 60) + 1
+  if(lonlat[2] > 0) {
+    utm + 32600
+  } else{
+    utm + 32700
+  }
+}
+
+sample_info %>% dplyr::select(lon, lat) %>% as.matrix() -> coordinates_ghana
+## example
+apply(coordinates_ghana, MARGIN = 1, FUN = lonlat2UTM)
+epsg_ghana_UTM <- 32630
+st_crs(epsg_ghana_UTM)$proj4string
+utm_proj_ghana <- st_crs(epsg_ghana_UTM)$proj4string  # "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs"
+
+ghana_coordinates <- ghana_coordinates %>% st_transform(crs = utm_proj_ghana)
+ghana_coordinates <- as(ghana_coordinates, "Spatial")
+```
+
+```{r}
+ghana_coords <- as.data.frame(ghana_coordinates) %>% dplyr::select(code, coords.x1, coords.x2) %>% distinct() %>% arrange(code)
+
+mat_geo <- mat_geo_dist(data = ghana_coords, ID = "code", x = "coords.x1", y = "coords.x2")
+mat_geo_km <- mat_geo/1000
+```
+
+28 Feb, 2022 - exporting coordinates
+
+```{r}
+ghana_coords <- ghana_coords %>% arrange(code)
+names(ghana_coords) <- c("code", "LONG", "LAT")
+# ghana_coords %>% write.csv("data/220228_vector_UTMcoord.csv")
+```
+
+03 Mar, 2022
++ prep coordinate files for resistance surface optimisation
+```{r}
+# saveRDS(list(Fst, ghana_coords, mat_geo_km), file = "data/220304_GT_sim85LG.rds")
+# mat_geo_km from below
+```
+
+#### Mantel test
+```{r}
+reynolds_fst <- as.matrix(Fst)
+geo_dist <- mat_geo_km %>% as.matrix()
+
+### in correct order
+order <- row.names(reynolds_fst)[order(c(as.character(row.names(reynolds_fst))))]
+geo_dist <- reorder_mat(mat = geo_dist, order = order)
+reynolds_fst <- reorder_mat(mat = reynolds_fst, order = order)
+
+rownames(reynolds_fst) == rownames(geo_dist)
+## Linearized genetic distances
+reynolds_fst_lin <- reynolds_fst / (1-reynolds_fst)
+
+##### Perform Mantel tests #####
+mantel_reynold_fst <- mantel(as.dist(reynolds_fst_lin), as.dist(geo_dist), permutations = 10000)
+
+p <- scatter_dist(mat_gd = reynolds_fst, mat_ld = geo_dist, 
+             pts_col = "black", method = "lm") + theme_bw(base_size = 12, base_family = "Arial") + xlab("Geographic distance (km)")
+
+p <- p + annotate("text", x = 100, y = 0.150, label = paste0("Significance = ", round(mantel_reynold_fst$signif,3))) + annotate("text", x = 100, y = 0.158, label = paste0("Mantel statistic r = ", round(mantel_reynold_fst$statistic,3)))
+
+ggsave(plot = p, filename = "Docs/220130_fst_geodist_mantel.png", device = "png", dpi = 100, width = 6, height = 5, units = "in" )
+```
+02 May, 2022
++ Geo dist and genetic distance summary stats
+```{r}
+std_error <- function(x) sd(x)/sqrt(length(x))
+reynolds_fst_lin[lower.tri(reynolds_fst_lin )] %>% mean()
+reynolds_fst_lin[lower.tri(reynolds_fst_lin )] %>% std_error()
+mat_geo_km[lower.tri(mat_geo_km )] %>% mean()
+mat_geo_km[lower.tri(mat_geo_km )] %>% std_error()
+```
+
+
+

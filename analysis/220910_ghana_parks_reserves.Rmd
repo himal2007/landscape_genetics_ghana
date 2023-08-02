@@ -156,19 +156,19 @@ p3 <- direction + geom_point(data = sample_info, aes(X, Y, shape = samples), siz
 
 p3$labels$shape <- "Samples" #"Sample size"
 
-ggsave(plot = p3, filename = "figs/220923_sample_locations_vec_par.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+# ggsave(plot = p3, filename = "figs/220923_sample_locations_vec_par.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
 #### Vector samples
 ```{r}
 sample_info_vectors <- sample_info %>% dplyr::filter(samples == "vectors")
 
-vector_only <- direction + geom_point(data = sample_info_vectors, aes(X, Y, size = sample_numbers), shape = 21, fill = "white", alpha = 1, colour = "black", stroke = 1) +
-  geom_label_repel(data = sample_info_vectors, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18)
+vector_only <- direction + geom_point(data = sample_info_vectors, aes(X, Y, size = sample_numbers), shape = 22, fill = "white", alpha = 1, colour = "black", stroke = 1) +
+  geom_label_repel(data = sample_info_vectors, aes(X, Y, label = pop_id), size = 5, alpha = 1) + theme_bw(base_family = "Arial", base_size = 18) + scale_size()
 
 vector_only$labels$size <- "Sample size"
 
-ggsave(plot = vector_only, filename = "figs/221015_sample_locations_vector_only.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+ggsave(plot = vector_only, filename = "figs/221130_sample_locations_vector_only.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
 #### Parasite samples
@@ -180,7 +180,7 @@ parasite_only <- direction + geom_point(data = sample_info_parasites, aes(X, Y, 
 
 parasite_only$labels$size <- "Sample size"
 
-ggsave(plot = parasite_only, filename = "figs/221015_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
+ggsave(plot = parasite_only, filename = "figs/2211130_sample_locations_par_onlt.png", device = "png", dpi = 500, width = 9, height = 5, units = "in" )
 ```
 
 ### Find which locations belong to which region

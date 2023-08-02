@@ -1,4 +1,10 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+*.Rproj.user
+*.Rhistory
+*.RData
+*.Ruserdata
+*.grd
+*.gri
+*.rds
+*.vcf
+*.vcf.gz
+*.fa
