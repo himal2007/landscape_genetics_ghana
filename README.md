@@ -3,7 +3,7 @@
 
 This repository contains the code used for the publication titled "Synthesizing Environmental, Epidemiological, and Vector and Parasite Genetic Data to Assist Decision Making for Disease Elimination". The research focuses on integrating diverse datasets to aid decision-making processes in onchocerciasis elimination efforts, a vector-borne disease.
 
-This paper is submitted to the [Molecular Ecology] (https://onlinelibrary.wiley.com/journal/1365294x) and is currently under review. 
+This paper is submitted to the [Molecular Ecology](https://onlinelibrary.wiley.com/journal/1365294x) and is currently under review. 
 
 <!-- ## Publication Information
 - **Title**: Synthesizing Environmental, Epidemiological, and Vector and Parasite Genetic Data to Assist Decision Making for Disease Elimination
